@@ -4,6 +4,10 @@
 import os
 LANGS = ["de", "fr", "es", "it", "pt", "ja", "zh-Hans"]
 T = {
+"Colosseum deathmatch with bots (q2dm1)": ["Colosseum-Deathmatch mit Bots (q2dm1)","Deathmatch Colosseum avec bots (q2dm1)","Deathmatch de Colosseum con bots (q2dm1)","Deathmatch Colosseum con bot (q2dm1)","Deathmatch do Colosseum com bots (q2dm1)","Colosseum デスマッチ（ボット付き、q2dm1）","Colosseum 死亡竞赛（含机器人，q2dm1）"],
+"OpenGL 1.x renderer": ["OpenGL-1.x-Renderer","Moteur de rendu OpenGL 1.x","Renderizador OpenGL 1.x","Renderer OpenGL 1.x","Renderizador OpenGL 1.x","OpenGL 1.x レンダラー","OpenGL 1.x 渲染器"],
+"Window 1280×800": ["Fenster 1280×800","Fenêtre 1280×800","Ventana 1280×800","Finestra 1280×800","Janela 1280×800","ウィンドウ 1280×800","窗口 1280×800"],
+"Capture the flag with bots (q2ctf1)": ["Capture the Flag mit Bots (q2ctf1)","Capture the Flag avec bots (q2ctf1)","Capturar la bandera con bots (q2ctf1)","Capture the Flag con bot (q2ctf1)","Capture the Flag com bots (q2ctf1)","ボット付きキャプチャー・ザ・フラッグ（q2ctf1）","含机器人的夺旗模式（q2ctf1）"],
 "Gamma, saturation and a touch of bleach": ["Gamma, Sättigung und ein Hauch Bleach-Look","Gamma, saturation et une touche de bleach","Gamma, saturación y un toque de bleach","Gamma, saturazione e un tocco di bleach","Gama, saturação e um toque de bleach","ガンマ・彩度・わずかなブリーチ効果","伽马、饱和度和一点漂白效果"],
 "Contrast S-curve": ["Kontrast per S-Kurve","Contraste en courbe en S","Contraste con curva en S","Contrasto a curva S","Contraste em curva S","S字カーブでコントラスト調整","S 曲线对比度"],
 "Old monitor look: scanlines and curved screen": ["Alter Monitor: Scanlines und gewölbter Bildschirm","Look vieux moniteur : lignes de balayage et écran bombé","Aspecto de monitor antiguo: líneas de barrido y pantalla curva","Look da vecchio monitor: scanline e schermo curvo","Aspeto de monitor antigo: linhas de varrimento e ecrã curvo","古いモニター風：走査線と湾曲した画面","老式显示器效果：扫描线和弧形屏幕"],

@@ -36,7 +36,7 @@ packaged as a library that is injected into games, plus a SwiftUI launcher app t
 That is only a prediction. The proof is starting the game: the log tab shows `Initializing ReShade …` and the path used, and the overlay opens with your overlay key.
 `work/check_games.sh` starts every game in the list and writes a report (`GAMES.md`).
 
-Tested so far: vkQuake, UZDoom (Vulkan), UT2004, UT99 (OpenGL), Quetoo (Metal) — see [GAMES.md](GAMES.md).
+Tested so far: vkQuake, UZDoom (Vulkan), UT2004, UT99, Quake II (Yamagi, gl1 renderer) (OpenGL), Quetoo (Metal) — see [GAMES.md](GAMES.md).
 
 ## Using it
 

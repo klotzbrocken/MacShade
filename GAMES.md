@@ -7,3 +7,4 @@
 | Quetoo | yes | Metal bridge (pipelined) | yes |  |
 | UZDoom | yes | Vulkan (direct) | yes |  |
 | UT99 | yes | OpenGL bridge (pipelined) | yes |  |
+| Quake II (Yamagi 8.71pre + Colosseum bots) | yes | OpenGL bridge | yes | gl1 renderer; bots via Colosseum (Gladiator botlib) |
