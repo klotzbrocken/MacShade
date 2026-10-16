@@ -1,0 +1,244 @@
+/*
+ * Copyright (C) 2021 Patrick Mours
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+#pragma once
+
+#include <d3d12.h>
+#include "reshade_api_pipeline.hpp"
+#include <vector>
+#include <limits>
+
+namespace reshade::d3d12
+{
+	static_assert(sizeof(D3D12_BOX) == sizeof(api::subresource_box));
+	static_assert(sizeof(D3D12_RECT) == sizeof(api::rect));
+	static_assert(sizeof(D3D12_VIEWPORT) == sizeof(api::viewport));
+	static_assert(sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) == sizeof(api::descriptor_table));
+
+	struct resource_extra_data
+	{
+		D3D12_SUBRESOURCE_FOOTPRINT footprint;
+	};
+
+	struct pipeline_extra_data
+	{
+		D3D12_PRIMITIVE_TOPOLOGY topology;
+		FLOAT blend_constant[4];
+	};
+
+	struct pipeline_layout_extra_data
+	{
+		const std::pair<D3D12_DESCRIPTOR_HEAP_TYPE, UINT> *ranges;
+	};
+
+	struct query_heap_extra_data
+	{
+		UINT count;
+		ID3D12Resource *readback_resource;
+		std::pair<ID3D12Fence *, UINT64> *fences;
+	};
+
+	inline constexpr GUID extra_data_guid = { 0xB2257A30, 0x4014, 0x46EA, { 0xBD, 0x88, 0xDE, 0xC2, 0x1D, 0xB6, 0xA0, 0x2B } }; // {B2257A30-4014-46EA-BD88-DEC21DB6A02B}
+
+	auto convert_format(api::format format) -> DXGI_FORMAT;
+	auto convert_format(DXGI_FORMAT format) -> api::format;
+
+	auto convert_color_space(api::color_space type) -> DXGI_COLOR_SPACE_TYPE;
+	auto convert_color_space(DXGI_COLOR_SPACE_TYPE type) -> api::color_space;
+
+	void convert_subresource_box(const reshade::api::subresource_box *box, const D3D12_RESOURCE_DESC &desc, uint32_t subresource, UINT &width, UINT &height, UINT &depth);
+
+	auto convert_access_to_usage(D3D12_BARRIER_ACCESS access) -> api::resource_usage;
+	auto convert_barrier_layout_to_usage(D3D12_BARRIER_LAYOUT layout) -> api::resource_usage;
+	auto convert_resource_states_to_usage(D3D12_RESOURCE_STATES states) -> api::resource_usage;
+
+	auto convert_usage_to_access(api::resource_usage usage) -> D3D12_BARRIER_ACCESS;
+	auto convert_usage_to_resource_states(api::resource_usage usage) -> D3D12_RESOURCE_STATES;
+
+	void convert_sampler_desc(const api::sampler_desc &desc, D3D12_SAMPLER_DESC &internal_desc);
+	void convert_sampler_desc(const api::sampler_desc &desc, D3D12_SAMPLER_DESC2 &internal_desc);
+	void convert_sampler_desc(const api::sampler_desc &desc, D3D12_STATIC_SAMPLER_DESC &internal_desc);
+	void convert_sampler_desc(const api::sampler_desc &desc, D3D12_STATIC_SAMPLER_DESC1 &internal_desc);
+	api::sampler_desc convert_sampler_desc(const D3D12_SAMPLER_DESC &internal_desc);
+	api::sampler_desc convert_sampler_desc(const D3D12_SAMPLER_DESC2 &internal_desc);
+	api::sampler_desc convert_sampler_desc(const D3D12_STATIC_SAMPLER_DESC &internal_desc);
+
+	void convert_resource_desc(const api::resource_desc &desc, D3D12_RESOURCE_DESC &internal_desc, D3D12_HEAP_PROPERTIES &heap_props, D3D12_HEAP_FLAGS &heap_flags);
+	void convert_resource_desc(const api::resource_desc &desc, D3D12_RESOURCE_DESC1 &internal_desc, D3D12_HEAP_PROPERTIES &heap_props, D3D12_HEAP_FLAGS &heap_flags);
+	inline void convert_resource_desc(const api::resource_desc &desc, D3D12_RESOURCE_DESC &internal_desc)
+	{
+		D3D12_HEAP_FLAGS dummy_heap_flags;
+		D3D12_HEAP_PROPERTIES dummy_heap_props;
+		convert_resource_desc(desc, internal_desc, dummy_heap_props, dummy_heap_flags);
+	}
+	inline void convert_resource_desc(const api::resource_desc &desc, D3D12_RESOURCE_DESC1 &internal_desc)
+	{
+		D3D12_HEAP_FLAGS dummy_heap_flags;
+		D3D12_HEAP_PROPERTIES dummy_heap_props;
+		convert_resource_desc(desc, internal_desc, dummy_heap_props, dummy_heap_flags);
+	}
+	api::resource_desc convert_resource_desc(const D3D12_RESOURCE_DESC &internal_desc, const D3D12_HEAP_PROPERTIES &heap_props = {}, D3D12_HEAP_FLAGS heap_flags = D3D12_HEAP_FLAG_NONE);
+	api::resource_desc convert_resource_desc(const D3D12_RESOURCE_DESC1 &internal_desc, const D3D12_HEAP_PROPERTIES &heap_props = {}, D3D12_HEAP_FLAGS heap_flags = D3D12_HEAP_FLAG_NONE);
+
+	void convert_resource_view_desc(const api::resource_view_desc &desc, D3D12_DEPTH_STENCIL_VIEW_DESC &internal_desc);
+	void convert_resource_view_desc(const api::resource_view_desc &desc, D3D12_RENDER_TARGET_VIEW_DESC &internal_desc);
+	void convert_resource_view_desc(const api::resource_view_desc &desc, D3D12_SHADER_RESOURCE_VIEW_DESC &internal_desc);
+	void convert_resource_view_desc(const api::resource_view_desc &desc, D3D12_UNORDERED_ACCESS_VIEW_DESC &internal_desc);
+	api::resource_view_desc convert_resource_view_desc(const D3D12_RESOURCE_DESC &resource_desc);
+	api::resource_view_desc convert_resource_view_desc(const D3D12_DEPTH_STENCIL_VIEW_DESC &internal_desc);
+	api::resource_view_desc convert_resource_view_desc(const D3D12_RENDER_TARGET_VIEW_DESC &internal_desc);
+	api::resource_view_desc convert_resource_view_desc(const D3D12_SHADER_RESOURCE_VIEW_DESC &internal_desc);
+	api::resource_view_desc convert_resource_view_desc(const D3D12_UNORDERED_ACCESS_VIEW_DESC &internal_desc);
+
+	void convert_shader_desc(const api::shader_desc &desc, D3D12_SHADER_BYTECODE &internal_desc);
+	api::shader_desc convert_shader_desc(const D3D12_SHADER_BYTECODE &internal_desc);
+
+	void convert_input_element(const api::input_element &desc, D3D12_INPUT_ELEMENT_DESC &internal_desc);
+	api::input_element convert_input_element(const D3D12_INPUT_ELEMENT_DESC &internal_desc);
+
+	void convert_stream_output_desc(const api::stream_output_desc &desc, D3D12_STREAM_OUTPUT_DESC &internal_desc);
+	api::stream_output_desc convert_stream_output_desc(const D3D12_STREAM_OUTPUT_DESC &internal_desc);
+	void convert_blend_desc(const api::blend_desc &desc, D3D12_BLEND_DESC &internal_desc);
+	api::blend_desc convert_blend_desc(const D3D12_BLEND_DESC &internal_desc);
+	void convert_rasterizer_desc(const api::rasterizer_desc &desc, D3D12_RASTERIZER_DESC &internal_desc);
+	void convert_rasterizer_desc(const api::rasterizer_desc &desc, D3D12_RASTERIZER_DESC1 &internal_desc);
+	void convert_rasterizer_desc(const api::rasterizer_desc &desc, D3D12_RASTERIZER_DESC2 &internal_desc);
+	api::rasterizer_desc convert_rasterizer_desc(const D3D12_RASTERIZER_DESC &internal_desc);
+	api::rasterizer_desc convert_rasterizer_desc(const D3D12_RASTERIZER_DESC1 &internal_desc);
+	api::rasterizer_desc convert_rasterizer_desc(const D3D12_RASTERIZER_DESC2 &internal_desc);
+	void convert_depth_stencil_desc(const api::depth_stencil_desc &desc, D3D12_DEPTH_STENCIL_DESC &internal_desc);
+	void convert_depth_stencil_desc(const api::depth_stencil_desc &desc, D3D12_DEPTH_STENCIL_DESC1 &internal_desc);
+	void convert_depth_stencil_desc(const api::depth_stencil_desc &desc, D3D12_DEPTH_STENCIL_DESC2 &internal_desc);
+	api::depth_stencil_desc convert_depth_stencil_desc(const D3D12_DEPTH_STENCIL_DESC &internal_desc);
+	api::depth_stencil_desc convert_depth_stencil_desc(const D3D12_DEPTH_STENCIL_DESC1 &internal_desc);
+	api::depth_stencil_desc convert_depth_stencil_desc(const D3D12_DEPTH_STENCIL_DESC2 &internal_desc);
+
+	auto convert_logic_op(api::logic_op value) -> D3D12_LOGIC_OP;
+	auto convert_logic_op(D3D12_LOGIC_OP value) -> api::logic_op;
+	auto convert_blend_op(api::blend_op value) -> D3D12_BLEND_OP;
+	auto convert_blend_op(D3D12_BLEND_OP value) -> api::blend_op;
+	auto convert_blend_factor(api::blend_factor value) -> D3D12_BLEND;
+	auto convert_blend_factor(D3D12_BLEND value) -> api::blend_factor;
+	auto convert_fill_mode(api::fill_mode value) -> D3D12_FILL_MODE;
+	auto convert_fill_mode(D3D12_FILL_MODE value) -> api::fill_mode;
+	auto convert_cull_mode(api::cull_mode value) -> D3D12_CULL_MODE;
+	auto convert_cull_mode(D3D12_CULL_MODE value) -> api::cull_mode;
+	auto convert_compare_op(api::compare_op value) -> D3D12_COMPARISON_FUNC;
+	auto convert_compare_op(D3D12_COMPARISON_FUNC value) -> api::compare_op;
+	auto convert_stencil_op(api::stencil_op value) -> D3D12_STENCIL_OP;
+	auto convert_stencil_op(D3D12_STENCIL_OP value) -> api::stencil_op;
+	auto convert_primitive_topology(api::primitive_topology value) -> D3D12_PRIMITIVE_TOPOLOGY;
+	auto convert_primitive_topology(D3D12_PRIMITIVE_TOPOLOGY value) -> api::primitive_topology;
+	auto convert_primitive_topology_type(api::primitive_topology value) -> D3D12_PRIMITIVE_TOPOLOGY_TYPE;
+	auto convert_primitive_topology_type(D3D12_PRIMITIVE_TOPOLOGY_TYPE value) -> api::primitive_topology;
+
+	auto get_query_size(api::query_type type) -> std::pair<uint32_t, uint32_t>; // { struct size, offset in struct }
+	auto convert_query_type(api::query_type type) -> D3D12_QUERY_TYPE;
+	auto convert_query_type(D3D12_QUERY_TYPE type) -> api::query_type;
+	auto convert_query_type_to_heap_type(api::query_type type) -> D3D12_QUERY_HEAP_TYPE;
+	auto convert_query_heap_type_to_type(D3D12_QUERY_HEAP_TYPE type) -> api::query_type;
+
+	auto convert_descriptor_type(api::descriptor_type type) -> D3D12_DESCRIPTOR_RANGE_TYPE;
+	auto convert_descriptor_type(D3D12_ROOT_PARAMETER_TYPE type) -> api::descriptor_type;
+	auto convert_descriptor_type(D3D12_DESCRIPTOR_RANGE_TYPE type) -> api::descriptor_type;
+	auto convert_descriptor_type_to_heap_type(api::descriptor_type type) -> D3D12_DESCRIPTOR_HEAP_TYPE;
+	auto convert_descriptor_range_flags(api::descriptor_range_flags value) -> D3D12_DESCRIPTOR_RANGE_FLAGS;
+	auto convert_descriptor_range_flags(D3D12_ROOT_DESCRIPTOR_FLAGS value) -> api::descriptor_range_flags;
+	auto convert_descriptor_range_flags(D3D12_DESCRIPTOR_RANGE_FLAGS value) -> api::descriptor_range_flags;
+
+	auto convert_shader_visibility(api::shader_stage value) -> D3D12_SHADER_VISIBILITY;
+	auto convert_shader_visibility(D3D12_SHADER_VISIBILITY value) -> api::shader_stage;
+
+	auto convert_render_pass_flags(api::render_pass_flags value) -> D3D12_RENDER_PASS_FLAGS;
+	auto convert_render_pass_flags(D3D12_RENDER_PASS_FLAGS value) -> api::render_pass_flags;
+	auto convert_render_pass_load_op(api::render_pass_load_op value) -> D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE;
+	auto convert_render_pass_load_op(D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE value) -> api::render_pass_load_op;
+	auto convert_render_pass_store_op(api::render_pass_store_op value) -> D3D12_RENDER_PASS_ENDING_ACCESS_TYPE;
+	auto convert_render_pass_store_op(D3D12_RENDER_PASS_ENDING_ACCESS_TYPE value) -> api::render_pass_store_op;
+
+	void convert_render_pass_render_target_desc(const api::render_pass_render_target_desc &desc, api::format clear_format, D3D12_RENDER_PASS_RENDER_TARGET_DESC &internal_desc);
+	api::render_pass_render_target_desc convert_render_pass_render_target_desc(const D3D12_RENDER_PASS_RENDER_TARGET_DESC &internal_desc);
+	void convert_render_pass_depth_stencil_desc(const api::render_pass_depth_stencil_desc &desc, api::format clear_format, D3D12_RENDER_PASS_DEPTH_STENCIL_DESC &internal_desc);
+	api::render_pass_depth_stencil_desc convert_render_pass_depth_stencil_desc(const D3D12_RENDER_PASS_DEPTH_STENCIL_DESC &internal_desc);
+
+	auto convert_fence_flags(api::fence_flags value) -> D3D12_FENCE_FLAGS;
+
+	auto convert_pipeline_flags(api::pipeline_flags value) -> D3D12_RAYTRACING_PIPELINE_FLAGS;
+	auto convert_pipeline_flags(D3D12_RAYTRACING_PIPELINE_FLAGS value) -> api::pipeline_flags;
+	auto convert_acceleration_structure_type(api::acceleration_structure_type value) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE;
+	auto convert_acceleration_structure_type(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE value) -> api::acceleration_structure_type;
+	auto convert_acceleration_structure_copy_mode(api::acceleration_structure_copy_mode value) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE;
+	auto convert_acceleration_structure_copy_mode(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE value) -> api::acceleration_structure_copy_mode;
+	auto convert_acceleration_structure_build_flags(api::acceleration_structure_build_flags value, api::acceleration_structure_build_mode mode) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS;
+	auto convert_acceleration_structure_build_flags(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS value) -> api::acceleration_structure_build_flags;
+	auto convert_acceleration_structure_post_build_info_type(api::query_type value) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_TYPE;
+	auto convert_acceleration_structure_post_build_info_type(D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_TYPE value) -> api::query_type;
+
+	void convert_acceleration_structure_build_input(const api::acceleration_structure_build_input &build_input, D3D12_RAYTRACING_GEOMETRY_DESC &geometry);
+	api::acceleration_structure_build_input convert_acceleration_structure_build_input(const D3D12_RAYTRACING_GEOMETRY_DESC &geometry);
+
+	inline auto to_handle(ID3D12Resource *ptr) { return api::resource { reinterpret_cast<uintptr_t>(ptr) }; }
+	inline auto to_handle(D3D12_CPU_DESCRIPTOR_HANDLE handle) { return api::resource_view { static_cast<uint64_t>(handle.ptr) }; }
+	inline auto to_handle(ID3D12PipelineState *ptr) { return api::pipeline { reinterpret_cast<uintptr_t>(ptr) }; }
+	inline auto to_handle(ID3D12StateObject *ptr) { return api::pipeline { reinterpret_cast<uintptr_t>(ptr) }; }
+	inline auto to_handle(ID3D12RootSignature *ptr) { return api::pipeline_layout { reinterpret_cast<uintptr_t>(ptr) }; }
+	inline auto to_handle(ID3D12QueryHeap *ptr) { return api::query_heap { reinterpret_cast<uintptr_t>(ptr) }; }
+	inline auto to_handle(ID3D12DescriptorHeap *ptr) { return api::descriptor_heap { reinterpret_cast<uintptr_t>(ptr) }; }
+	inline auto to_handle(ID3D12Fence *ptr) { return api::fence { reinterpret_cast<uintptr_t>(ptr) }; }
+}
+
+#pragma warning(push)
+#pragma warning(disable : 4324)
+template <D3D12_PIPELINE_STATE_SUBOBJECT_TYPE Type, typename T>
+struct alignas(void *) D3D12_PIPELINE_STATE_STREAM
+{
+	D3D12_PIPELINE_STATE_STREAM() {}
+	D3D12_PIPELINE_STATE_STREAM(const T &data) : data(data) {}
+
+	D3D12_PIPELINE_STATE_SUBOBJECT_TYPE type = Type;
+	T data = {};
+};
+#pragma warning(pop)
+
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE, ID3D12RootSignature *> D3D12_PIPELINE_STATE_STREAM_ROOT_SIGNATURE;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_VS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_PS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_DS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_HS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_HS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_GS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_GS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_CS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_CS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_STREAM_OUTPUT, D3D12_STREAM_OUTPUT_DESC> D3D12_PIPELINE_STATE_STREAM_STREAM_OUTPUT;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_BLEND, D3D12_BLEND_DESC> D3D12_PIPELINE_STATE_STREAM_BLEND_DESC;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_MASK, UINT> D3D12_PIPELINE_STATE_STREAM_SAMPLE_MASK;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER, D3D12_RASTERIZER_DESC> D3D12_PIPELINE_STATE_STREAM_RASTERIZER;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL, D3D12_DEPTH_STENCIL_DESC> D3D12_PIPELINE_STATE_STREAM_DEPTH_STENCIL;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_INPUT_LAYOUT, D3D12_INPUT_LAYOUT_DESC> D3D12_PIPELINE_STATE_STREAM_INPUT_LAYOUT;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_IB_STRIP_CUT_VALUE, D3D12_INDEX_BUFFER_STRIP_CUT_VALUE> D3D12_PIPELINE_STATE_STREAM_IB_STRIP_CUT_VALUE;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PRIMITIVE_TOPOLOGY, D3D12_PRIMITIVE_TOPOLOGY_TYPE> D3D12_PIPELINE_STATE_STREAM_PRIMITIVE_TOPOLOGY;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RENDER_TARGET_FORMATS, D3D12_RT_FORMAT_ARRAY> D3D12_PIPELINE_STATE_STREAM_RENDER_TARGET_FORMATS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT, DXGI_FORMAT> D3D12_PIPELINE_STATE_STREAM_DEPTH_STENCIL_FORMAT;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC, DXGI_SAMPLE_DESC> D3D12_PIPELINE_STATE_STREAM_SAMPLE_DESC;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_NODE_MASK, UINT> D3D12_PIPELINE_STATE_STREAM_NODE_MASK;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_CACHED_PSO, D3D12_CACHED_PIPELINE_STATE> D3D12_PIPELINE_STATE_STREAM_CACHED_PSO;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_FLAGS, D3D12_PIPELINE_STATE_FLAGS> D3D12_PIPELINE_STATE_STREAM_FLAGS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL1, D3D12_DEPTH_STENCIL_DESC1> D3D12_PIPELINE_STATE_STREAM_DEPTH_STENCIL1;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VIEW_INSTANCING, D3D12_VIEW_INSTANCING_DESC> D3D12_PIPELINE_STATE_STREAM_VIEW_INSTANCING;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_AS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_AS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_MS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL2, D3D12_DEPTH_STENCIL_DESC2> D3D12_PIPELINE_STATE_STREAM_DEPTH_STENCIL2;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER1, D3D12_RASTERIZER_DESC1> D3D12_PIPELINE_STATE_STREAM_RASTERIZER1;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER2, D3D12_RASTERIZER_DESC2> D3D12_PIPELINE_STATE_STREAM_RASTERIZER2;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SERIALIZED_ROOT_SIGNATURE, D3D12_SERIALIZED_ROOT_SIGNATURE_DESC> D3D12_PIPELINE_STATE_STREAM_SERIALIZED_ROOT_SIGNATURE;
+
+// vkd3d extension interfaces
+inline constexpr GUID IID_ID3D12DeviceExt = { 0x11ea7a1a, 0x0f6a, 0x49bf, { 0xb6, 0x12, 0x3e, 0x30, 0xf8, 0xe2, 0x01, 0xdd } }; // {11EA7A1A-0F6A-49BF-B612-3E30F8E201DD}
+inline constexpr GUID IID_ID3D12DeviceExt1 = { 0x099a73fd, 0x2199, 0x4f45, { 0xbf, 0x48, 0x0e, 0xb8, 0x6f, 0x6f, 0xdb, 0x65 } }; // {099A73FD-2199-4F45-BF48-0EB86F6FDB65}
+inline constexpr GUID IID_ID3D12DeviceExt2 = { 0xe859c4ac, 0xba8f, 0x41c4, { 0x8e, 0xac, 0x11, 0x37, 0xfd, 0xe6, 0x15, 0x8d } }; // {E859C4AC-BA8F-41C4-8EAC-1137FDE6158D}
+inline constexpr GUID IID_ID3D12DeviceExt3 = { 0x3aefa75c, 0xc9f3, 0x4b7f, { 0xa1, 0x80, 0x5d, 0xf6, 0x95, 0xd0, 0x83, 0xbf } }; // {3AEFA75C-C9F3-4B7F-A180-5DF695D083BF}
+inline constexpr GUID IID_ID3D12DeviceExt4 = { 0xa91b5617, 0xa06a, 0x4d6f, { 0xb4, 0x37, 0x03, 0xeb, 0xbe, 0xf9, 0x14, 0x15 } }; // {A91B5617-A06A-4D6F-B437-03EBBEF91415}
+inline constexpr GUID IID_ID3D12DeviceExt5 = { 0xe51323f6, 0x3541, 0x4ddf, { 0x89, 0x4d, 0x8a, 0x8c, 0x70, 0xe3, 0xe4, 0x27 } }; // {E51323F6-3541-4DDF-894D-8A8C70E3E427}
+inline constexpr GUID IID_ID3D12GraphicsCommandListExt = { 0x77a86b09, 0x2bea, 0x4801, { 0xb8, 0x9a, 0x37, 0x64, 0x8e, 0x10, 0x4a, 0xf1 } }; // {77A86B09-2BEA-4801-B89A-37648E104AF1}
+inline constexpr GUID IID_ID3D12GraphicsCommandListExt1 = { 0xd53b0028, 0xafb4, 0x4b65, { 0xa4, 0xf1, 0x7b, 0x0d, 0xaa, 0xa6, 0x5b, 0x4f } }; // {D53B0028-AFB4-4B65-A4F1-7B0DAAA65B4F}
+inline constexpr GUID IID_ID3D12GraphicsCommandListExt2 = { 0x3bb8ce38, 0xabef, 0x484f, { 0x8f, 0x88, 0xd5, 0xaf, 0x90, 0xac, 0x19, 0xfb } }; // {3BB8CE38-ABEF-484F-8F88-D5AF90AC19FB}

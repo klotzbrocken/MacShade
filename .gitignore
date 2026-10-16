@@ -1,0 +1,9 @@
+build/
+build-asan/
+.build/
+*.app/
+third_party/
+work/shots/
+work/benchbase/
+.DS_Store
+node_modules/
