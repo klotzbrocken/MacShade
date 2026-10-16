@@ -4,6 +4,8 @@
 import os
 LANGS = ["de", "fr", "es", "it", "pt", "ja", "zh-Hans"]
 T = {
+"Gamma, saturation and a touch of bleach": ["Gamma, Sättigung und ein Hauch Bleach-Look","Gamma, saturation et une touche de bleach","Gamma, saturación y un toque de bleach","Gamma, saturazione e un tocco di bleach","Gama, saturação e um toque de bleach","ガンマ・彩度・わずかなブリーチ効果","伽马、饱和度和一点漂白效果"],
+"Contrast S-curve": ["Kontrast per S-Kurve","Contraste en courbe en S","Contraste con curva en S","Contrasto a curva S","Contraste em curva S","S字カーブでコントラスト調整","S 曲线对比度"],
 "Old monitor look: scanlines and curved screen": ["Alter Monitor: Scanlines und gewölbter Bildschirm","Look vieux moniteur : lignes de balayage et écran bombé","Aspecto de monitor antiguo: líneas de barrido y pantalla curva","Look da vecchio monitor: scanline e schermo curvo","Aspeto de monitor antigo: linhas de varrimento e ecrã curvo","古いモニター風：走査線と湾曲した画面","老式显示器效果：扫描线和弧形屏幕"],
 "Warm or cool colour cast": ["Warmer oder kühler Farbstich","Dominante de couleur chaude ou froide","Tono de color cálido o frío","Dominante di colore calda o fredda","Tom de cor quente ou frio","暖色または寒色の色かぶり","偏暖或偏冷的色调"],
 "Fine film grain": ["Feines Filmkorn","Grain de film fin","Grano de película fino","Grana di pellicola sottile","Grão de filme fino","細かいフィルムグレイン","细腻的胶片颗粒"],

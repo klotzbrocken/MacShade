@@ -127,6 +127,8 @@ import Foundation
             case "Smart_Sharp": out.append(("Smart Sharp", L("Sharpens edges without halos")))
             case "prod80_04_ContrastBrightnessSaturation": out.append((L("Contrast & colour"), L("More contrast, saturation and vibrance")))
             case "prod80_02_Bloom": out.append(("Bloom", L("Realistic glow around bright areas")))
+            case "Tonemap": out.append(("Tonemap", L("Gamma, saturation and a touch of bleach")))
+            case "Curves": out.append(("Curves", L("Contrast S-curve")))
             case "LumaSharpen": out.append(("LumaSharpen", L("Sharpens textures")))
             case "FXAA": out.append(("FXAA", L("Smooths jagged edges")))
             case "Technicolor": out.append(("Technicolor", L("Film colour grade")))
