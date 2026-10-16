@@ -46,7 +46,7 @@ enum LaunchOptions {
                 .init(title: "Colosseum deathmatch with bots (q2dm1)", arguments: "+set game colosseum +set maxclients 32 +exec configs/dm.cfg +map q2dm1"),
                 .init(title: "OpenGL 1.x renderer", arguments: "+set vid_renderer gl1"),
                 .init(title: "Windowed", arguments: "+set vid_fullscreen 0"),
-                .init(title: "Fullscreen", arguments: "+set vid_fullscreen 1"),
+                .init(title: "Fullscreen at desktop resolution", arguments: "+set vid_fullscreen 2 +set r_mode -2"),
                 .init(title: "Window 1280×800", arguments: "+set r_mode -1 +set r_customwidth 1280 +set r_customheight 800"),
                 .init(title: "Game data folder …", kind: .folder(flag: "-datadir")),
                 .init(title: "Capture the flag with bots (q2ctf1)", arguments: "+set game colosseum +set maxclients 32 +exec configs/ctf.cfg +map q2ctf1", verified: false),
