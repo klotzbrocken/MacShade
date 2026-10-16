@@ -81,7 +81,16 @@ static VkResult VKAPI_CALL term_CreateInstance(const VkInstanceCreateInfo *ci, c
 {
 	ensure_mvk();
 	const auto create = reinterpret_cast<PFN_vkCreateInstance>(mvk_gipa(VK_NULL_HANDLE, "vkCreateInstance"));
-	const VkResult r = create(ci, a, out);
+	// Applications written for the real Vulkan loader (Yamagi Quake II's ref_vk, ...) ask the *loader* for VK_KHR_portability_enumeration and the matching flag;
+	// MoltenVK itself does not know them and fails with VK_ERROR_EXTENSION_NOT_PRESENT. The loader consumes them, so do the same.
+	std::vector<const char *> names;
+	for (uint32_t i = 0; i < ci->enabledExtensionCount; ++i)
+		if (std::strcmp(ci->ppEnabledExtensionNames[i], "VK_KHR_portability_enumeration") != 0) names.push_back(ci->ppEnabledExtensionNames[i]);
+	VkInstanceCreateInfo filtered = *ci;
+	filtered.enabledExtensionCount = static_cast<uint32_t>(names.size());
+	filtered.ppEnabledExtensionNames = names.data();
+	filtered.flags &= ~0x00000001u; // VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+	const VkResult r = create(&filtered, a, out);
 	if (r == VK_SUCCESS)
 	{
 		void *key = new_dispatch_key();
@@ -159,6 +168,7 @@ static PFN_vkVoidFunction VKAPI_CALL next_gdpa(VkDevice device, const char *name
 // ---------- what the application sees ----------
 static PFN_vkVoidFunction VKAPI_CALL app_gipa(VkInstance instance, const char *name);
 static PFN_vkVoidFunction VKAPI_CALL app_gdpa(VkDevice device, const char *name);
+static void *resolve_stub_target(const char *name);
 
 static VkResult VKAPI_CALL app_CreateInstance(const VkInstanceCreateInfo *ci, const VkAllocationCallbacks *a, VkInstance *out)
 {
@@ -187,16 +197,21 @@ static PFN_vkVoidFunction VKAPI_CALL app_gipa(VkInstance instance, const char *n
 {
 	if (!name) return nullptr;
 	ensure_mvk();
+	if (trace_enabled() && std::getenv("MACSHADE_TRACE_GIPA")) std::fprintf(stderr, "[macshade] gipa(%p, %s)\n", (void *)instance, name);
 	if (!std::strcmp(name, "vkGetInstanceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(&app_gipa);
 	if (!std::strcmp(name, "vkGetDeviceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(&app_gdpa);
 	if (!std::strcmp(name, "vkCreateInstance")) return reinterpret_cast<PFN_vkVoidFunction>(&app_CreateInstance);
 	if (instance == VK_NULL_HANDLE) return mvk_gipa(nullptr, name); // global functions never go through layers
 	if (!std::strcmp(name, "vkCreateDevice")) return reinterpret_cast<PFN_vkVoidFunction>(&app_CreateDevice);
+	// The real loader answers vkGetInstanceProcAddr for *device* functions with a trampoline into the device's layer chain; ReShade's own implementation only
+	// knows its instance-level hooks. Applications that load everything through the instance (volk, Yamagi's ref_vk) would otherwise bypass ReShade completely.
+	if (void *target = resolve_stub_target(name)) return reinterpret_cast<PFN_vkVoidFunction>(target); // the same mapping the interposed symbols use (ReShade's hooks + our terminators that stamp queues/command buffers)
 	return rs_vkGetInstanceProcAddr(instance, name);
 }
 static PFN_vkVoidFunction VKAPI_CALL app_gdpa(VkDevice device, const char *name)
 {
 	if (!name) return nullptr;
+	if (trace_enabled() && std::getenv("MACSHADE_TRACE_GIPA")) std::fprintf(stderr, "[macshade] gdpa(%p, %s)\n", (void *)device, name);
 	if (!std::strcmp(name, "vkGetDeviceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(&app_gdpa);
 	return rs_vkGetDeviceProcAddr(device, name);
 }

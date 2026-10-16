@@ -26,7 +26,7 @@ packaged as a library that is injected into games, plus a SwiftUI launcher app t
 
 | Graphics API of the game | How ReShade gets the frames | Depth buffer |
 |---|---|---|
-| Vulkan via MoltenVK (e.g. vkQuake, UZDoom) | ReShade hooks in directly (Vulkan loader emulation, dyld interposing) | yes |
+| Vulkan via MoltenVK (e.g. vkQuake, UZDoom, Yamagi Quake II `ref_vk`) | ReShade hooks in directly (Vulkan loader emulation, dyld interposing) | yes |
 | OpenGL (e.g. UT2004, UT99, ioquake3) | Bridge: frame → IOSurface → ReShade on a private Vulkan device → back | experimental |
 | Metal (e.g. Quetoo / SDL_GPU) | Same bridge, tapped at `presentDrawable:` | experimental |
 
@@ -35,6 +35,8 @@ packaged as a library that is injected into games, plus a SwiftUI launcher app t
 **How do I know whether a game works?** When you add a game, the launcher inspects its executable (architectures, linked graphics libraries) and shows the graphics path or why it cannot work.
 That is only a prediction. The proof is starting the game: the log tab shows `Initializing ReShade …` and the path used, and the overlay opens with your overlay key.
 `work/check_games.sh` starts every game in the list and writes a report (`GAMES.md`).
+
+Vulkan games that load their functions through the instance (volk-style) or ask the loader for `VK_KHR_portability_enumeration` work too: MacShade emulates those parts of the Vulkan loader. For such a game put MoltenVK in place of its `libvulkan.1.dylib`.
 
 Tested so far: vkQuake, UZDoom (Vulkan), UT2004, UT99, Quake II (Yamagi, gl1 renderer) (OpenGL), Quetoo (Metal) — see [GAMES.md](GAMES.md).
 
