@@ -4,6 +4,7 @@
 import os
 LANGS = ["de", "fr", "es", "it", "pt", "ja", "zh-Hans"]
 T = {
+"Weapons stay": ["Waffen bleiben liegen","Les armes restent","Las armas se quedan","Le armi restano","As armas ficam","武器が消えない","武器不消失"],
 "Fullscreen at desktop resolution": ["Vollbild in Desktop-Auflösung","Plein écran en résolution du bureau","Pantalla completa a la resolución del escritorio","Schermo intero alla risoluzione del desktop","Ecrã inteiro na resolução do ambiente de trabalho","デスクトップ解像度でフルスクリーン","以桌面分辨率全屏"],
 "Colosseum deathmatch with bots (q2dm1)": ["Colosseum-Deathmatch mit Bots (q2dm1)","Deathmatch Colosseum avec bots (q2dm1)","Deathmatch de Colosseum con bots (q2dm1)","Deathmatch Colosseum con bot (q2dm1)","Deathmatch do Colosseum com bots (q2dm1)","Colosseum デスマッチ（ボット付き、q2dm1）","Colosseum 死亡竞赛（含机器人，q2dm1）"],
 "OpenGL 1.x renderer": ["OpenGL-1.x-Renderer","Moteur de rendu OpenGL 1.x","Renderizador OpenGL 1.x","Renderer OpenGL 1.x","Renderizador OpenGL 1.x","OpenGL 1.x レンダラー","OpenGL 1.x 渲染器"],
