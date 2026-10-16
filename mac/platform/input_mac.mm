@@ -211,6 +211,9 @@ std::shared_ptr<reshade::input> reshade::input::register_window(window_handle wi
 		if (auto existing = it->second.lock())
 			return existing;
 
+	// keep the object alive: SDL & co. may destroy or recreate their window/view while the game runs (video restart, fullscreen toggle), and a stale pointer would
+	// crash resolve_window() inside objc_opt_isKindOfClass
+	if (window != nullptr) CFRetain(window);
 	const auto instance = std::make_shared<input>(window);
 	s_windows[window] = instance;
 	log::message(log::level::info, "Registered input window %p.", window);
@@ -519,5 +522,11 @@ void reshade::input_gamepad::next_frame()
 void macshade_set_window_override(void *surface_handle, void *window)
 {
 	std::lock_guard<std::mutex> lock(s_window_overrides_mutex);
+	// retain both (see register_window): the layer and the window can be destroyed by the game while ReShade still holds the pointers
+	if (const auto it = s_window_overrides.find(surface_handle); it == s_window_overrides.end() || it->second != window)
+	{
+		if (surface_handle != nullptr && it == s_window_overrides.end()) CFRetain(surface_handle);
+		if (window != nullptr) CFRetain(window);
+	}
 	s_window_overrides[surface_handle] = window;
 }
