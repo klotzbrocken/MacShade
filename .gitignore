@@ -7,3 +7,5 @@ work/shots/
 work/benchbase/
 .DS_Store
 node_modules/
+*.dmg
+dmg-staging/

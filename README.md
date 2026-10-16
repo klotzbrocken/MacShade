@@ -82,6 +82,11 @@ cd mac && mkdir -p build && cd build && cmake .. && make -j10      # libmacshade
 cd ../../App && ./build_app.sh                                      # MacShade.app
 ```
 
+### Signing and DMG
+
+`App/sign_and_package.sh` signs the app with your *Developer ID Application* certificate (hardened runtime), builds `MacShade-<version>.dmg`, and — if a `notarytool`
+keychain profile exists — notarizes and staples it. One-time setup: `xcrun notarytool store-credentials MacShade --apple-id <id> --team-id <team>`.
+
 ## Repository layout
 
 - `reshade/` – the ReShade 6.8 sources (BSD-3-Clause) with a few macOS patches, vendored without Git history. See `reshade/LICENSE.md`.
