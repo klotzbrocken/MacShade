@@ -255,7 +255,11 @@ final class Launcher: ObservableObject {
         guard let out = try? FileHandle(forWritingTo: logURL) else { phase[game.id] = .failed(L("Log file is not writable.")); return }
 
         var arguments = splitArguments(game.arguments)
-        if game.suppressRestoreDialog { arguments += ["-ApplePersistenceIgnoreState", "YES"] }
+        if game.suppressRestoreDialog {
+            // Quake-style engines (Q3, Quake3e ...) join everything after a "+command" into that command: put the flag in front of the first "+" or it ends up in the last value
+            let flag = ["-ApplePersistenceIgnoreState", "YES"]
+            if let i = arguments.firstIndex(where: { $0.hasPrefix("+") }) { arguments.insert(contentsOf: flag, at: i) } else { arguments += flag }
+        }
         let p = Process(); p.executableURL = exe; p.arguments = arguments
         var env = ProcessInfo.processInfo.environment
         env["DYLD_INSERT_LIBRARIES"] = Paths.dylib.path
