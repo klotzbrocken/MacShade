@@ -45,6 +45,7 @@ enum HubCatalog {
         .init(id: "srb2", game: "Sonic Robo Blast 2", port: "SRB2", note: "Free 3D Sonic fangame, OpenGL renderer", page: "https://github.com/STJr/SRB2", repo: "STJr/SRB2", asset: ["macos-installer.dmg"]),
         .init(id: "redeclipse", game: "Red Eclipse", port: "Red Eclipse", note: "Free fast arena shooter (950 MB)", page: "https://github.com/redeclipse/base", repo: "redeclipse/base", asset: ["mac.tar.bz2"]),
         .init(id: "soh", game: "Zelda: Ocarina of Time", port: "Ship of Harkinian", note: "PC port, needs your own ROM", page: "https://github.com/HarbourMasters/Shipwright", repo: "HarbourMasters/Shipwright", asset: ["mac.zip"]),
+        .init(id: "edgeoftime", game: "Spider-Man: Edge of Time", port: "EdgeOfTimeRecomp", note: "Recompilation for Apple Silicon, Vulkan 1.2; needs your own Xbox 360 dump", page: "https://github.com/goliathret/EdgeOfTimeRecomp", repo: "goliathret/EdgeOfTimeRecomp", asset: ["mac-arm64", ".dmg"]),
     ]
 }
 
