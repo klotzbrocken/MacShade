@@ -105,19 +105,19 @@ struct HubOffer: Identifiable {
 struct GameHubView: View {
     @EnvironmentObject var store: Store
     var addGame: () -> Void
-    @State private var apps: [String] = []
+    @State private var apps: [URL] = []
 
     private func norm(_ s: String) -> String { s.lowercased().replacingOccurrences(of: ".app", with: "") }
-    private func hit(_ p: HubPort, _ names: [String]) -> Bool {
-        names.contains { n in let n = norm(n); return p.keys.contains { $0.hasPrefix("=") ? n == String($0.dropFirst()) : n.contains($0) } }
+    private func matches(_ p: HubPort, _ name: String) -> Bool {
+        let n = norm(name); return p.keys.contains { $0.hasPrefix("=") ? n == String($0.dropFirst()) : n.contains($0) }
     }
-    private func inList(_ p: HubPort) -> Bool { hit(p, store.games.map(\.name)) }
-    private func onDisk(_ p: HubPort) -> Bool { hit(p, apps) }
+    private func inList(_ p: HubPort) -> Bool { store.games.contains { matches(p, $0.name) } }
+    private func onDisk(_ p: HubPort) -> URL? { apps.first { matches(p, $0.lastPathComponent) } }
     private func scanApps() {
         let fm = FileManager.default, home = fm.homeDirectoryForCurrentUser.path
         apps = ["/Applications", home + "/Applications", HubInstaller.folder.path].flatMap { d in
-            ((try? fm.contentsOfDirectory(atPath: d)) ?? []) + ((try? fm.contentsOfDirectory(atPath: d + "/Games")) ?? [])
-        }.filter { $0.hasSuffix(".app") }
+            [d, d + "/Games"].flatMap { dir in ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).filter { $0.hasSuffix(".app") }.map { URL(fileURLWithPath: dir).appendingPathComponent($0) } }
+        }
     }
     @StateObject private var installer = HubInstaller()
 
@@ -135,12 +135,14 @@ struct GameHubView: View {
                                 Text(LocalizedStringKey(p.note)).font(.system(size: 13)).foregroundStyle(Theme.muted)
                                 HStack(spacing: 6) {
                                     Pill(text: label(p.status), color: p.status == .tested ? Theme.good : p.status == .likely ? Theme.warn : Theme.muted)
-                                    if inList(p) { Pill(text: L("In MacShade"), color: Theme.accent) } else if onDisk(p) { Pill(text: L("Installed"), color: Theme.accent) }
+                                    if inList(p) { Pill(text: L("In MacShade"), color: Theme.accent) } else if onDisk(p) != nil { Pill(text: L("Installed"), color: Theme.accent) }
                                 }
                             }
                             Spacer(minLength: 12)
                             VStack(alignment: .trailing, spacing: 8) {
-                                if p.repo != nil && !inList(p) && !onDisk(p) {
+                                if !inList(p), let app = onDisk(p) {
+                                    Button { _ = store.add(appURL: app) } label: { Label("Add to MacShade", systemImage: "plus.circle") }.buttonStyle(SoftButton(tint: Theme.accent))
+                                } else if p.repo != nil && !inList(p) {
                                     Button { Task { await installer.prepare(p) } } label: {
                                         if installer.busy == p.id { ProgressView().controlSize(.small) } else { Label("Download", systemImage: "arrow.down.circle") }
                                     }.buttonStyle(SoftButton(tint: Theme.accent)).disabled(installer.busy != nil)

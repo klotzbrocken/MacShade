@@ -232,6 +232,7 @@ T = {
 "Check for updates automatically": ["Automatisch nach Updates suchen","Rechercher les mises à jour automatiquement","Buscar actualizaciones automáticamente","Cerca aggiornamenti automaticamente","Procurar atualizações automaticamente","アップデートを自動的に確認","自动检查更新"],
 "Check for updates now": ["Jetzt nach Updates suchen","Rechercher maintenant","Buscar actualizaciones ahora","Cerca aggiornamenti ora","Procurar atualizações agora","今すぐ確認","立即检查更新"],
 "Check for Updates …": ["Nach Updates suchen …","Rechercher des mises à jour …","Buscar actualizaciones …","Cerca aggiornamenti …","Procurar atualizações …","アップデートを確認 …","检查更新 …"],
+"Add to MacShade": ["Zu MacShade hinzufügen","Ajouter à MacShade","Añadir a MacShade","Aggiungi a MacShade","Adicionar ao MacShade","MacShade に追加","添加到 MacShade"],
 "Find games": ["Spiele suchen","Rechercher des jeux","Buscar juegos","Cerca giochi","Procurar jogos","ゲームを検索","查找游戏"],
 "Find games …": ["Spiele suchen …","Rechercher des jeux…","Buscar juegos…","Cerca giochi…","Procurar jogos…","ゲームを検索…","查找游戏…"],
 "Cancel": ["Abbrechen","Annuler","Cancelar","Annulla","Cancelar","キャンセル","取消"],
