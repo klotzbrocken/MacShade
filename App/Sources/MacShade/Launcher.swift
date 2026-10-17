@@ -98,6 +98,8 @@ final class Launcher: ObservableObject {
     @Published var phase: [UUID: Phase] = [:]
     @Published var log: [UUID: String] = [:]
     @Published var reshadeLog: [UUID: String] = [:]
+    /// What ReShade really hooked in the last start, read from its log (nil: not started yet).
+    @Published var observedPath: [UUID: String] = [:]
     private var processes: [UUID: Process] = [:]
     private var preparing: [UUID: Task<Void, Never>] = [:]   // start in progress (copy being prepared)
     /// True from the click on Start until the game has quit: a second start, removing or moving the copies must wait.
@@ -263,12 +265,17 @@ final class Launcher: ObservableObject {
         if game.fpsLimit > 0 { env["MACSHADE_FPS_LIMIT"] = String(game.fpsLimit) }
         p.environment = env
         p.standardOutput = out; p.standardError = out
-        let id = game.id
+        let id = game.id, started = Date()
         p.terminationHandler = { proc in
             Task { @MainActor in
                 self.timers[id]?.invalidate(); self.timers[id] = nil; self.processes[id] = nil
                 self.readLog(id, logURL)
-                self.phase[id] = proc.terminationStatus == 0 || proc.terminationReason == .exit && proc.terminationStatus == 15 ? .idle
+                let stoppedByUs = proc.terminationReason == .exit && proc.terminationStatus == 15
+                if !stoppedByUs, Date().timeIntervalSince(started) < 10 {   // gone within seconds: typical for games that insist on their own launcher (Steam, EA app, …)
+                    self.phase[id] = .failed(L("The game quit within seconds (status %d). Some games only run through their own launcher (Steam, EA app …) and refuse a copy.", Int(proc.terminationStatus)))
+                    return
+                }
+                self.phase[id] = proc.terminationStatus == 0 || stoppedByUs ? .idle
                     : .failed(L("Exited (status %d). See the log.", Int(proc.terminationStatus)))
             }
         }
@@ -286,6 +293,11 @@ final class Launcher: ObservableObject {
         if let data = try? Data(contentsOf: reshade) {
             let text = String(decoding: data.suffix(24_000), as: UTF8.self)
             if reshadeLog[id] != text { reshadeLog[id] = text }
+            let full = String(decoding: data, as: UTF8.self)
+            let seen: String? = full.contains("Initializing ReShade")
+                ? (full.contains("Bridge: pipelined processing") || full.contains("Bridge: processing") ? L("OpenGL/Metal bridge")
+                    : full.contains("Running on") ? L("Vulkan (direct)") : L("ReShade loaded, but no graphics path was hooked")) : nil
+            if observedPath[id] != seen { observedPath[id] = seen }
         }
     }
 

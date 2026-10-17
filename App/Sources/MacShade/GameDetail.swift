@@ -104,6 +104,7 @@ struct GameDetail: View {
                         Pill(text: info.api.shortLabel, color: info.api == .vulkan ? Theme.good : (info.api == .bridge ? Theme.accent : Theme.warn))
                         if !info.archs.contains("arm64") { Pill(text: L("Architecture: %@", info.archs), color: Theme.warn) }
                     }
+                    if let seen = launcher.observedPath[game.id] { Pill(text: L("Last start: %@", seen), color: seen == L("ReShade loaded, but no graphics path was hooked") ? Theme.warn : Theme.accent) }
                     if copyUsage > 0 { Pill(text: L("Game copy ready · %@", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file)), color: Theme.good) }
                     statusView
                 }

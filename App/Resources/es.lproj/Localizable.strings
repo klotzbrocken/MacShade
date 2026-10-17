@@ -1,3 +1,7 @@
+"Vulkan (direct)" = "Vulkan (directo)";
+"ReShade loaded, but no graphics path was hooked" = "ReShade cargado, pero no se enganchó ninguna ruta gráfica";
+"Last start: %@" = "Último inicio: %@";
+"The game quit within seconds (status %d). Some games only run through their own launcher (Steam, EA app …) and refuse a copy." = "El juego se cerró en pocos segundos (estado %d). Algunos juegos solo funcionan a través de su propio lanzador (Steam, EA app …) y rechazan una copia.";
 "Weapons stay" = "Las armas se quedan";
 "Fullscreen at desktop resolution" = "Pantalla completa a la resolución del escritorio";
 "Colosseum deathmatch with bots (q2dm1)" = "Deathmatch de Colosseum con bots (q2dm1)";

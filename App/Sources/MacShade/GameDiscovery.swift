@@ -23,7 +23,22 @@ enum GameDiscovery {
             let games = URL(fileURLWithPath: "/Volumes/\(volume)/Games")
             if fm.fileExists(atPath: games.path) { folders.append(games) }
         }
+        folders += steamLibraries()
         return folders
+    }
+
+    /// Steam game folders (`<library>/steamapps/common`) from Steam's own list of libraries.
+    static func steamLibraries() -> [URL] {
+        let fm = FileManager.default
+        let steam = fm.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Steam")
+        var roots = [steam.path]
+        if let text = try? String(contentsOf: steam.appendingPathComponent("steamapps/libraryfolders.vdf"), encoding: .utf8) {
+            for line in text.split(whereSeparator: \.isNewline) where line.contains("\"path\"") {   // "path"		"/Volumes/Games/SteamLibrary"
+                let parts = line.split(separator: "\"").map(String.init)
+                if let i = parts.firstIndex(of: "path"), parts.count > i + 2 { roots.append(parts[i + 2]) }
+            }
+        }
+        return Set(roots).map { URL(fileURLWithPath: $0).appendingPathComponent("steamapps/common") }.filter { fm.fileExists(atPath: $0.path) }
     }
 
     /// Looks for .app bundles up to two levels deep that are tagged as games or have a well-known name.

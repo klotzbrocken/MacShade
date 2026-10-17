@@ -55,13 +55,13 @@ Measured on an Apple Silicon Mac, per frame of ReShade work (OpenGL bridge, UT20
 
 | Preset | What it does | Cost |
 |---|---|---|
-| *Look* (default), *Look-…* | MacLook: sharpening, bloom, vibrance, vignette in **one** pass | ~1–2 ms |
+| *Look* (default), *Look-…* | MacLook: sharpening, bloom, vibrance, vignette with **one** full-resolution pass (plus a small quarter-resolution bloom) | ~1–2 ms |
 | *<Game>-Mix* | MacLook + CAS sharpening | ~2.5–4 ms |
 | *<Game>-Plus* | Vibrance + qUINT bloom + CAS | ~4.5–8 ms |
 | *<Game>-Max* | prod80 colour + bloom + Smart Sharp | ~8–16 ms |
 | *<Game>-Retro* | pale colours, vignette, CRT scanlines | ~5–9 ms |
 
-Every full-screen pass costs real time on the GPU, so more effects mean fewer FPS. The launcher's default look is deliberately a single pass.
+Every full-screen pass costs real time on the GPU, so more effects mean fewer FPS. The launcher's default look is deliberately a single full-resolution pass.
 
 ## Building
 

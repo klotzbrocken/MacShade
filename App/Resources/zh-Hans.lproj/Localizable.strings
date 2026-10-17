@@ -1,3 +1,7 @@
+"Vulkan (direct)" = "Vulkan（直接）";
+"ReShade loaded, but no graphics path was hooked" = "ReShade 已加载，但未挂接任何图形路径";
+"Last start: %@" = "上次启动：%@";
+"The game quit within seconds (status %d). Some games only run through their own launcher (Steam, EA app …) and refuse a copy." = "游戏在几秒内退出（状态 %d）。有些游戏只能通过自己的启动器（Steam、EA app 等）运行，不接受副本。";
 "Weapons stay" = "武器不消失";
 "Fullscreen at desktop resolution" = "以桌面分辨率全屏";
 "Colosseum deathmatch with bots (q2dm1)" = "Colosseum 死亡竞赛（含机器人，q2dm1）";
