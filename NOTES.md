@@ -41,3 +41,6 @@ The unmodified ReShade 6.8 core (`reshade/`) runs as `libmacshade.dylib` inside 
 - Depth for OpenGL/Metal on more games; real Metal depth from a game is still unverified.
 - Gamepad (GameController) and fullscreen cursor capture are untested with real hardware.
 - Core-profile OpenGL (`glFenceSync` path) is untested.
+
+## Vulkan apps that bundle the real loader (Spider-Man: Edge of Time recomp)
+Apps that ship `libvulkan.1.dylib` + MoltenVK as an ICD (volk, plume) never expose MoltenVK to `dlsym`, so the emulated loader had nothing to hook. `my_dlsym` now also serves `vk*` lookups from a real loader through the emulated one, and `ensure_mvk` loads our own MoltenVK (`MACSHADE_MOLTENVK`) when no ICD is loaded yet. Result: ReShade overlay and effects work in the unmodified (ad-hoc re-signed) copy. Verified only with EdgeOfTimeRecomp 1.0.0 on an M5.

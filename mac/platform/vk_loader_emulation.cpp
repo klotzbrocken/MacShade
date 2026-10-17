@@ -47,6 +47,9 @@ static void ensure_mvk()
 {
 	std::call_once(s_mvk_once, [] {
 		if (mvk_gipa == nullptr) mvk_gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(RTLD_DEFAULT, "vk_icdGetInstanceProcAddr"));
+		if (mvk_gipa == nullptr)   // a real loader (libvulkan) hands MoltenVK out lazily: load our own copy, the app is then served through the emulated loader
+			if (const char *path = std::getenv("MACSHADE_MOLTENVK"))
+				if (void *h = dlopen(path, RTLD_NOW | RTLD_LOCAL)) mvk_gipa = reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(h, "vk_icdGetInstanceProcAddr"));
 		if (mvk_gipa == nullptr) std::fprintf(stderr, "[macshade] could not find the Vulkan driver (vk_icdGetInstanceProcAddr)\n");
 	});
 }
@@ -292,7 +295,10 @@ static void *my_dlsym(void *handle, const char *name)
 	if (p == nullptr || name == nullptr || name[0] != 'v' || name[1] != 'k') return p;
 	if (!is_icd_address(p) && p != nullptr)
 	{
-		return p; // a Vulkan loader (libvulkan) or one of our own stubs: hand back unchanged; ReShade then has to come in as a layer (libVkLayer_macshade)
+		bool ours = false;   // one of our own stubs: hand back unchanged
+		for (const StubEntry &e : s_stubs) if (p == e.stub) ours = true;
+		if (ours) return p;
+		// otherwise a Vulkan loader (libvulkan): bypass it and serve the application from the emulated loader (see ensure_mvk)
 	}
 	ensure_mvk();
 	if (trace_enabled()) std::fprintf(stderr, "[macshade] dlsym(%s) = %p\n", name, p);
