@@ -263,7 +263,10 @@ final class Launcher: ObservableObject {
         let p = Process(); p.executableURL = exe; p.arguments = arguments
         var env = ProcessInfo.processInfo.environment
         env["DYLD_INSERT_LIBRARIES"] = Paths.dylib.path
-        env["MACSHADE_MOLTENVK"] = Paths.dylib.deletingLastPathComponent().appendingPathComponent("libMoltenVK.dylib").path
+        // prefer the MoltenVK the game ships: the game was built and tested against that version
+        let bundle = exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let own = FileManager.default.enumerator(atPath: bundle.path)?.compactMap { $0 as? String }.first { $0.hasSuffix("/libMoltenVK.dylib") || $0 == "libMoltenVK.dylib" }
+        env["MACSHADE_MOLTENVK"] = own.map { bundle.appendingPathComponent($0).path } ?? Paths.dylib.deletingLastPathComponent().appendingPathComponent("libMoltenVK.dylib").path
         env["MACSHADE_BASE"] = instance.path
         if game.pipeline { env["MACSHADE_PIPELINE"] = "1" }
         if game.fpsLimit > 0 { env["MACSHADE_FPS_LIMIT"] = String(game.fpsLimit) }

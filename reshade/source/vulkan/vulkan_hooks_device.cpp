@@ -1419,10 +1419,12 @@ VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache p
 
 			if (stage.module != VK_NULL_HANDLE)
 			{
-				const auto module_data = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_SHADER_MODULE>(stage.module);
-
-				desc->code = module_data->spirv.data();
-				desc->code_size = module_data->spirv.size();
+				// macshade: modules created through an entry point we did not hook (apps that resolve functions themselves) have no private data
+				if (const auto module_data = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_SHADER_MODULE>(stage.module))
+				{
+					desc->code = module_data->spirv.data();
+					desc->code_size = module_data->spirv.size();
+				}
 			}
 			else if (const auto module_info = find_in_structure_chain<VkShaderModuleCreateInfo>(
 				stage.pNext, VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO))
@@ -1511,10 +1513,11 @@ VkResult VKAPI_CALL vkCreateGraphicsPipelines(VkDevice device, VkPipelineCache p
 			uint32_t render_target_count = 0;
 			depth_stencil_format = reshade::api::format::unknown;
 
-			if (create_info.renderPass != VK_NULL_HANDLE)
-			{
-				const auto render_pass_data = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_RENDER_PASS>(create_info.renderPass);
+			// macshade: a render pass created through an unhooked entry point has no private data
+			const auto render_pass_data = create_info.renderPass != VK_NULL_HANDLE ? device_impl->get_private_data_for_object<VK_OBJECT_TYPE_RENDER_PASS>(create_info.renderPass) : nullptr;
 
+			if (render_pass_data != nullptr)
+			{
 				const reshade::vulkan::object_data<VK_OBJECT_TYPE_RENDER_PASS>::subpass &subpass = render_pass_data->subpasses[create_info.subpass];
 
 				render_target_count = subpass.num_color_attachments;
