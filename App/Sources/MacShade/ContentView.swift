@@ -9,11 +9,21 @@ struct ContentView: View {
     @State private var showDiscover = false
     @State private var showSettings = false
     @State private var renaming: Game?
+    @AppStorage("sidebarWidth") private var sidebarWidth = 264.0
+    @State private var dragStartWidth: Double?
 
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-            Rectangle().fill(Theme.line).frame(width: 1)
+            ZStack { Rectangle().fill(Theme.line).frame(width: 1) }   // the sidebar's edge: draggable, 9 pt wide hit area
+                .frame(width: 9).background(Theme.bg).contentShape(Rectangle())
+                .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }
+                .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { v in
+                        if dragStartWidth == nil { dragStartWidth = sidebarWidth }
+                        sidebarWidth = min(max((dragStartWidth ?? 264) + Double(v.translation.width), 200), 420)
+                    }
+                    .onEnded { _ in dragStartWidth = nil })
             VStack(spacing: 0) {
                 if let error = store.storageError {
                     HStack { Image(systemName: "exclamationmark.triangle.fill"); Text(error).font(.callout); Spacer(); Button("Dismiss") { store.storageError = nil } }
@@ -103,7 +113,7 @@ struct ContentView: View {
                 }
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 18).frame(width: 264).background(Theme.rail)
+        .padding(.horizontal, 14).padding(.vertical, 18).frame(width: CGFloat(sidebarWidth)).background(Theme.rail)
     }
 
     private func remove(_ id: UUID) {

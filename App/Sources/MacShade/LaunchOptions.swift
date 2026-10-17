@@ -16,7 +16,20 @@ enum LaunchOptions {
     /// Suggestions for the games MacShade knows, by engine; matched on the game's name.
     static func suggestions(for game: Game) -> [LaunchSuggestion] {
         let n = game.name.lowercased()
-        if n.contains("vkquake") || (n.contains("quake") && !n.contains("quake 2") && !n.contains("quake ii") && !n.contains("quake 3")) {
+        if n.contains("quake3") || n.contains("quake iii") || n.contains("quake 3") {   // ioquake3 / Quake3e (cvar names from the Quake3e source)
+            return [
+                .init(title: "Windowed 1280×800", arguments: "+set r_fullscreen 0 +set r_mode -1 +set r_customwidth 1280 +set r_customheight 800"),
+                .init(title: "Fullscreen at desktop resolution", arguments: "+set r_fullscreen 1 +set r_mode -2 +set r_modeFullscreen -2", verified: false),
+                .init(title: "MSAA 4×", arguments: "+set r_fbo 1 +set r_ext_multisample 4"),
+                .init(title: "HDR and bloom", arguments: "+set r_fbo 1 +set r_hdr 1 +set r_bloom 1"),
+                .init(title: "Anisotropic filtering 16×", arguments: "+set r_ext_texture_filter_anisotropic 1 +set r_ext_max_anisotropy 16"),
+                .init(title: "VSync on", arguments: "+set r_swapInterval 1"),
+                .init(title: "Frame rate limit 100", arguments: "+set com_maxfps 100"),
+                .init(title: "Show FPS", arguments: "+set cg_drawFPS 1", verified: false),
+                .init(title: "Bot match on q3dm17", arguments: "+set sv_pure 0 +set bot_minplayers 8 +map q3dm17", verified: false),
+            ]
+        }
+        if n.contains("vkquake") || (n.contains("quake") && !n.contains("quake 2") && !n.contains("quake ii") && !n.contains("quake 3") && !n.contains("quake3")) {
             return [
                 .init(title: "Game data folder …", kind: .folder(flag: "-basedir")),
                 .init(title: "Windowed", arguments: "-window"),
@@ -25,6 +38,10 @@ enum LaunchOptions {
                 .init(title: "Resolution 2560×1440", arguments: "-width 2560 -height 1440"),
                 .init(title: "No sound", arguments: "-nosound"),
                 .init(title: "No gamepad", arguments: "-nojoy"),
+                .init(title: "Desktop resolution", arguments: "-current"),
+                .init(title: "Refresh rate 100 Hz", arguments: "-refreshrate 100"),
+                .init(title: "Hipnotic mission pack", arguments: "-hipnotic"),
+                .init(title: "Rogue mission pack", arguments: "-rogue"),
                 .init(title: "Write console log to a file", arguments: "-condebug"),
                 .init(title: "Start map E1M1", arguments: "+map e1m1", verified: false),
             ]
@@ -37,6 +54,11 @@ enum LaunchOptions {
                 .init(title: "Start on map 1", arguments: "-warp 1"),
                 .init(title: "Skill level 3", arguments: "-skill 3"),
                 .init(title: "No monsters", arguments: "-nomonsters"),
+                .init(title: "Fast monsters", arguments: "-fast"),
+                .init(title: "Respawning monsters", arguments: "-respawn"),
+                .init(title: "Deathmatch", arguments: "-deathmatch"),
+                .init(title: "Turbo speed", arguments: "-turbo 150"),
+                .init(title: "Skip autoload files", arguments: "-noautoload"),
                 .init(title: "No sound", arguments: "-nosound"),
                 .init(title: "No music", arguments: "-nomusic"),
             ]
@@ -48,6 +70,13 @@ enum LaunchOptions {
                 .init(title: "Windowed", arguments: "+set vid_fullscreen 0"),
                 .init(title: "Fullscreen at desktop resolution", arguments: "+set vid_fullscreen 2 +set r_mode -2"),
                 .init(title: "Weapons stay", arguments: "+set dmflags 4"),
+                .init(title: "Show FPS", arguments: "+set cl_showfps 1"),
+                .init(title: "VSync on", arguments: "+set r_vsync 1"),
+                .init(title: "MSAA 4×", arguments: "+set r_msaa_samples 4"),
+                .init(title: "Anisotropic filtering 16×", arguments: "+set r_anisotropic 16"),
+                .init(title: "Frame rate limit 100", arguments: "+set vid_maxfps 100"),
+                .init(title: "OpenGL 3.2 renderer", arguments: "+set vid_renderer gl3"),
+                .init(title: "Portable (settings next to the game)", arguments: "-portable"),
                 .init(title: "Window 1280×800", arguments: "+set r_mode -1 +set r_customwidth 1280 +set r_customheight 800"),
                 .init(title: "Game data folder …", kind: .folder(flag: "-datadir")),
                 .init(title: "Capture the flag with bots (q2ctf1)", arguments: "+set game colosseum +set maxclients 32 +exec configs/ctf.cfg +map q2ctf1", verified: false),

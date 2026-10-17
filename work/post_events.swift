@@ -26,6 +26,17 @@ for item in args.dropFirst(2) {
         let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: pt, mouseButton: .left)!
         e.postToPid(pid)
         if p[0] == "click" { usleep(60_000); CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left)!.postToPid(pid) }
+    case "drag":   // drag:x1:y1:x2:y2 (window-relative points)
+        let o = windowOrigin()
+        func pt(_ x: String, _ y: String) -> CGPoint { CGPoint(x: o.x + CGFloat(Double(x)!), y: o.y + CGFloat(Double(y)!)) }
+        let a = pt(p[1], p[2]), b = pt(p[3], p[4])
+        CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: a, mouseButton: .left)!.postToPid(pid)
+        for i in 1...12 {
+            usleep(30_000)
+            let f = CGFloat(i) / 12
+            CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f), mouseButton: .left)!.postToPid(pid)
+        }
+        CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: b, mouseButton: .left)!.postToPid(pid)
     case "wait": usleep(UInt32(Double(p[1])! * 1_000_000))
     default: break
     }
