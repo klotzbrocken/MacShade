@@ -111,7 +111,7 @@ struct ContentView: View {
             }
             VStack(spacing: 8) {
                 Button { pickApp() } label: { Label("Add game", systemImage: "plus").frame(maxWidth: .infinity) }.buttonStyle(SoftButton())
-                Button { showHub.toggle(); showSettings = false } label: { Label("Game Hub", systemImage: "square.grid.2x2").frame(maxWidth: .infinity) }.buttonStyle(SoftButton(tint: showHub ? Theme.accent : Theme.text))
+                Button { showHub = true; showSettings = false } label: { Label("Game Hub", systemImage: "square.grid.2x2").frame(maxWidth: .infinity) }.buttonStyle(SoftButton(tint: showHub ? Theme.accent : Theme.text))
                 HStack(spacing: 8) {
                     Button { showDiscover = true } label: { Label("Find games", systemImage: "magnifyingglass").frame(maxWidth: .infinity) }.buttonStyle(SoftButton())
                     Button { showSettings.toggle(); showHub = false } label: { Image(systemName: "gearshape") }.buttonStyle(SoftButton(tint: showSettings ? Theme.accent : Theme.text)).help(L("Settings"))

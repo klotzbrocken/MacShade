@@ -9,43 +9,44 @@ struct HubPort: Identifiable {
     var repo: String? = nil                // GitHub "owner/name": offers a direct download of the latest macOS release
     var asset: [String] = []               // substrings (lowercase) the release asset name must contain
     var status: Status = .untested
+    var keys: [String] = []                // names that identify an installed copy ("=" prefix: exact match)
 }
 
 enum HubCatalog {
     static let ports: [HubPort] = [
-        .init(id: "quake", game: "Quake", port: "vkQuake", note: "Vulkan engine, best Quake path for MacShade", page: "https://github.com/Novum/vkQuake", status: .tested),
-        .init(id: "quake2", game: "Quake II", port: "Yamagi Quake II", note: "Use the Vulkan renderer (ref_vk) for ReShade; build from source", page: "https://github.com/yquake2/yquake2", status: .tested),
-        .init(id: "quake3", game: "Quake III Arena", port: "Quake3e", note: "Zip with executables; wrap or run it yourself", page: "https://github.com/ec-/Quake3e", repo: "ec-/Quake3e", asset: ["macos-aarch64"], status: .tested),
-        .init(id: "ut99", game: "Unreal Tournament 99", port: "OldUnreal patch 469", note: "Official OldUnreal macOS patch", page: "https://github.com/OldUnreal/UnrealTournamentPatches", repo: "OldUnreal/UnrealTournamentPatches", asset: ["macos.dmg"], status: .tested),
-        .init(id: "ut2004", game: "Unreal Tournament 2004", port: "OldUnreal patch", note: "Official OldUnreal macOS patch", page: "https://github.com/OldUnreal/UT2004Patches", repo: "OldUnreal/UT2004Patches", asset: ["macos.dmg"], status: .tested),
-        .init(id: "doom", game: "Doom / Doom II", port: "UZDoom", note: "Apple Silicon build", page: "https://github.com/UZDoom/UZDoom", repo: "UZDoom/UZDoom", asset: ["arm64.dmg"], status: .tested),
-        .init(id: "quetoo", game: "Quetoo", port: "Quetoo", note: "Free arena shooter with its own data", page: "https://github.com/jdolan/quetoo", repo: "jdolan/quetoo", asset: ["arm64-apple-darwin.dmg"], status: .tested),
-        .init(id: "unreal", game: "Unreal", port: "OldUnreal patch 227", note: "Same engine family as UT99", page: "https://github.com/OldUnreal/Unreal-testing", repo: "OldUnreal/Unreal-testing", asset: ["macos.dmg"], status: .likely),
-        .init(id: "halflife", game: "Half-Life", port: "Xash3D FWGS", note: "Small engine, simple graphics path (development build)", page: "https://github.com/FWGS/xash3d-fwgs", repo: "FWGS/xash3d-fwgs", asset: ["apple-arm64"]),
-        .init(id: "serioussam", game: "Serious Sam TFE / TSE", port: "Serious Engine", note: "Classic Serious Sam; build from source", page: "https://github.com/ptitSeb/Serious-Engine"),
-        .init(id: "prey", game: "Prey (2006)", port: "Prey2006", note: "Doom 3 engine based; build from source", page: "https://github.com/FriskTheFallenHuman/Prey2006"),
-        .init(id: "et", game: "Wolfenstein: Enemy Territory", port: "ET: Legacy", note: "Free multiplayer shooter", page: "https://github.com/etlegacy/etlegacy"),
-        .init(id: "mohaa", game: "Medal of Honor: Allied Assault", port: "OpenMoHAA", note: "Universal build", page: "https://github.com/openmoh/openmohaa", repo: "openmoh/openmohaa", asset: ["macos-multiarch"]),
-        .init(id: "duke3d", game: "Duke Nukem 3D", port: "Raze", note: "Build engine games, GZDoom based", page: "https://github.com/ZDoom/Raze", repo: "ZDoom/Raze", asset: ["macos", "zip"]),
-        .init(id: "morrowind", game: "Morrowind", port: "OpenMW", note: "Apple Silicon build", page: "https://github.com/OpenMW/openmw", repo: "OpenMW/openmw", asset: ["macos-arm64.dmg"]),
-        .init(id: "gothic2", game: "Gothic II", port: "OpenGothic", note: "Vulkan based (pre-release build)", page: "https://github.com/Try/OpenGothic", repo: "Try/OpenGothic", asset: ["osx_arm64"]),
-        .init(id: "warzone", game: "Warzone 2100", port: "Warzone 2100", note: "Free game, data included (1.1 GB)", page: "https://github.com/Warzone2100/warzone2100", repo: "Warzone2100/warzone2100", asset: ["macos_universal.zip"]),
-        .init(id: "selaco", game: "Selaco", port: "GZSelaco", note: "Commercial game; see macsourceports.com", page: "https://www.macsourceports.com/game/selaco"),
-        .init(id: "revolt", game: "Re-Volt", port: "RVGL", note: "Racing, lots of reflections; see rvgl.org", page: "https://rvgl.org"),
-        .init(id: "heretic2", game: "Heretic II", port: "Heretic2R", note: "Quake II engine roots", page: "https://github.com/m-x-d/Heretic2R", repo: "m-x-d/Heretic2R", asset: ["heretic2r_"]),
-        .init(id: "arx", game: "Arx Fatalis", port: "Arx Libertatis", note: "Dark RPG; build from source", page: "https://github.com/arx/ArxLibertatis"),
-        .init(id: "avp", game: "Aliens versus Predator", port: "NakedAVP", note: "Classic 3D shooter; build from source", page: "https://github.com/atsb/NakedAVP"),
-        .init(id: "jkdf2", game: "Jedi Knight / Dark Forces II", port: "OpenJKDF2", note: "OpenGL output (debug build)", page: "https://github.com/shinyquagsire23/OpenJKDF2", repo: "shinyquagsire23/OpenJKDF2", asset: ["macos-debug"]),
-        .init(id: "oni", game: "Oni", port: "OniARM64", note: "Apple Silicon only", page: "https://github.com/andiyar/OniARM64", repo: "andiyar/OniARM64", asset: ["dmg"]),
-        .init(id: "freespace2", game: "FreeSpace 2", port: "FS2 Open", note: "Apple Silicon build, has its own post effects", page: "https://github.com/scp-fs2open/fs2open.github.com", repo: "scp-fs2open/fs2open.github.com", asset: ["mac-arm64"]),
-        .init(id: "openrct2", game: "RollerCoaster Tycoon 2", port: "OpenRCT2", note: "Management game, needs RCT2 data", page: "https://github.com/OpenRCT2/OpenRCT2", repo: "OpenRCT2/OpenRCT2", asset: ["macos-universal"]),
-        .init(id: "openra", game: "Red Alert / C&C", port: "OpenRA", note: "Free real-time strategy, includes free game content", page: "https://github.com/OpenRA/OpenRA", repo: "OpenRA/OpenRA", asset: ["release", "dmg"]),
-        .init(id: "stk", game: "SuperTuxKart", port: "SuperTuxKart", note: "Free kart racer with Vulkan and OpenGL (750 MB)", page: "https://github.com/supertuxkart/stk-code", repo: "supertuxkart/stk-code", asset: ["mac-signed"]),
-        .init(id: "luanti", game: "Luanti (Minetest)", port: "Luanti", note: "Free voxel sandbox with shader support", page: "https://github.com/luanti-org/luanti", repo: "luanti-org/luanti", asset: ["arm64.zip"]),
-        .init(id: "srb2", game: "Sonic Robo Blast 2", port: "SRB2", note: "Free 3D Sonic fangame, OpenGL renderer", page: "https://github.com/STJr/SRB2", repo: "STJr/SRB2", asset: ["macos-installer.dmg"]),
-        .init(id: "redeclipse", game: "Red Eclipse", port: "Red Eclipse", note: "Free fast arena shooter (950 MB)", page: "https://github.com/redeclipse/base", repo: "redeclipse/base", asset: ["mac.tar.bz2"]),
-        .init(id: "soh", game: "Zelda: Ocarina of Time", port: "Ship of Harkinian", note: "PC port, needs your own ROM", page: "https://github.com/HarbourMasters/Shipwright", repo: "HarbourMasters/Shipwright", asset: ["mac.zip"]),
-        .init(id: "edgeoftime", game: "Spider-Man: Edge of Time", port: "EdgeOfTimeRecomp", note: "Recompilation for Apple Silicon, Vulkan 1.2; needs your own Xbox 360 dump", page: "https://github.com/goliathret/EdgeOfTimeRecomp", repo: "goliathret/EdgeOfTimeRecomp", asset: ["mac-arm64", ".dmg"]),
+        .init(id: "quake", game: "Quake", port: "vkQuake", note: "Vulkan engine, best Quake path for MacShade", page: "https://github.com/Novum/vkQuake", status: .tested, keys: ["vkquake", "quakespasm"]),
+        .init(id: "quake2", game: "Quake II", port: "Yamagi Quake II", note: "Use the Vulkan renderer (ref_vk) for ReShade; build from source", page: "https://github.com/yquake2/yquake2", status: .tested, keys: ["yamagi", "quake ii", "quake2"]),
+        .init(id: "quake3", game: "Quake III Arena", port: "Quake3e", note: "Zip with executables; wrap or run it yourself", page: "https://github.com/ec-/Quake3e", repo: "ec-/Quake3e", asset: ["macos-aarch64"], status: .tested, keys: ["quake3", "quake iii"]),
+        .init(id: "ut99", game: "Unreal Tournament 99", port: "OldUnreal patch 469", note: "Official OldUnreal macOS patch", page: "https://github.com/OldUnreal/UnrealTournamentPatches", repo: "OldUnreal/UnrealTournamentPatches", asset: ["macos.dmg"], status: .tested, keys: ["ut99", "unreal tournament 99"]),
+        .init(id: "ut2004", game: "Unreal Tournament 2004", port: "OldUnreal patch", note: "Official OldUnreal macOS patch", page: "https://github.com/OldUnreal/UT2004Patches", repo: "OldUnreal/UT2004Patches", asset: ["macos.dmg"], status: .tested, keys: ["ut2004", "tournament 2004"]),
+        .init(id: "doom", game: "Doom / Doom II", port: "UZDoom", note: "Apple Silicon build", page: "https://github.com/UZDoom/UZDoom", repo: "UZDoom/UZDoom", asset: ["arm64.dmg"], status: .tested, keys: ["doom"]),
+        .init(id: "quetoo", game: "Quetoo", port: "Quetoo", note: "Free arena shooter with its own data", page: "https://github.com/jdolan/quetoo", repo: "jdolan/quetoo", asset: ["arm64-apple-darwin.dmg"], status: .tested, keys: ["quetoo"]),
+        .init(id: "unreal", game: "Unreal", port: "OldUnreal patch 227", note: "Same engine family as UT99", page: "https://github.com/OldUnreal/Unreal-testing", repo: "OldUnreal/Unreal-testing", asset: ["macos.dmg"], status: .likely, keys: ["=unreal"]),
+        .init(id: "halflife", game: "Half-Life", port: "Xash3D FWGS", note: "Small engine, simple graphics path (development build)", page: "https://github.com/FWGS/xash3d-fwgs", repo: "FWGS/xash3d-fwgs", asset: ["apple-arm64"], keys: ["half-life", "half life", "xash"]),
+        .init(id: "serioussam", game: "Serious Sam TFE / TSE", port: "Serious Engine", note: "Classic Serious Sam; build from source", page: "https://github.com/ptitSeb/Serious-Engine", keys: ["serious"]),
+        .init(id: "prey", game: "Prey (2006)", port: "Prey2006", note: "Doom 3 engine based; build from source", page: "https://github.com/FriskTheFallenHuman/Prey2006", keys: ["prey"]),
+        .init(id: "et", game: "Wolfenstein: Enemy Territory", port: "ET: Legacy", note: "Free multiplayer shooter", page: "https://github.com/etlegacy/etlegacy", keys: ["enemy territory", "etlegacy"]),
+        .init(id: "mohaa", game: "Medal of Honor: Allied Assault", port: "OpenMoHAA", note: "Universal build", page: "https://github.com/openmoh/openmohaa", repo: "openmoh/openmohaa", asset: ["macos-multiarch"], keys: ["mohaa", "allied assault"]),
+        .init(id: "duke3d", game: "Duke Nukem 3D", port: "Raze", note: "Build engine games, GZDoom based", page: "https://github.com/ZDoom/Raze", repo: "ZDoom/Raze", asset: ["macos", "zip"], keys: ["duke", "raze"]),
+        .init(id: "morrowind", game: "Morrowind", port: "OpenMW", note: "Apple Silicon build", page: "https://github.com/OpenMW/openmw", repo: "OpenMW/openmw", asset: ["macos-arm64.dmg"], keys: ["openmw", "morrowind"]),
+        .init(id: "gothic2", game: "Gothic II", port: "OpenGothic", note: "Vulkan based (pre-release build)", page: "https://github.com/Try/OpenGothic", repo: "Try/OpenGothic", asset: ["osx_arm64"], keys: ["gothic"]),
+        .init(id: "warzone", game: "Warzone 2100", port: "Warzone 2100", note: "Free game, data included (1.1 GB)", page: "https://github.com/Warzone2100/warzone2100", repo: "Warzone2100/warzone2100", asset: ["macos_universal.zip"], keys: ["warzone"]),
+        .init(id: "selaco", game: "Selaco", port: "GZSelaco", note: "Commercial game; see macsourceports.com", page: "https://www.macsourceports.com/game/selaco", keys: ["selaco"]),
+        .init(id: "revolt", game: "Re-Volt", port: "RVGL", note: "Racing, lots of reflections; see rvgl.org", page: "https://rvgl.org", keys: ["rvgl", "re-volt", "revolt"]),
+        .init(id: "heretic2", game: "Heretic II", port: "Heretic2R", note: "Quake II engine roots", page: "https://github.com/m-x-d/Heretic2R", repo: "m-x-d/Heretic2R", asset: ["heretic2r_"], keys: ["heretic"]),
+        .init(id: "arx", game: "Arx Fatalis", port: "Arx Libertatis", note: "Dark RPG; build from source", page: "https://github.com/arx/ArxLibertatis", keys: ["arx"]),
+        .init(id: "avp", game: "Aliens versus Predator", port: "NakedAVP", note: "Classic 3D shooter; build from source", page: "https://github.com/atsb/NakedAVP", keys: ["aliens", "nakedavp"]),
+        .init(id: "jkdf2", game: "Jedi Knight / Dark Forces II", port: "OpenJKDF2", note: "OpenGL output (debug build)", page: "https://github.com/shinyquagsire23/OpenJKDF2", repo: "shinyquagsire23/OpenJKDF2", asset: ["macos-debug"], keys: ["jedi", "jkdf", "dark forces"]),
+        .init(id: "oni", game: "Oni", port: "OniARM64", note: "Apple Silicon only", page: "https://github.com/andiyar/OniARM64", repo: "andiyar/OniARM64", asset: ["dmg"], keys: ["=oni", "oniarm"]),
+        .init(id: "freespace2", game: "FreeSpace 2", port: "FS2 Open", note: "Apple Silicon build, has its own post effects", page: "https://github.com/scp-fs2open/fs2open.github.com", repo: "scp-fs2open/fs2open.github.com", asset: ["mac-arm64"], keys: ["freespace", "fs2"]),
+        .init(id: "openrct2", game: "RollerCoaster Tycoon 2", port: "OpenRCT2", note: "Management game, needs RCT2 data", page: "https://github.com/OpenRCT2/OpenRCT2", repo: "OpenRCT2/OpenRCT2", asset: ["macos-universal"], keys: ["openrct2", "rollercoaster"]),
+        .init(id: "openra", game: "Red Alert / C&C", port: "OpenRA", note: "Free real-time strategy, includes free game content", page: "https://github.com/OpenRA/OpenRA", repo: "OpenRA/OpenRA", asset: ["release", "dmg"], keys: ["openra"]),
+        .init(id: "stk", game: "SuperTuxKart", port: "SuperTuxKart", note: "Free kart racer with Vulkan and OpenGL (750 MB)", page: "https://github.com/supertuxkart/stk-code", repo: "supertuxkart/stk-code", asset: ["mac-signed"], keys: ["supertuxkart"]),
+        .init(id: "luanti", game: "Luanti (Minetest)", port: "Luanti", note: "Free voxel sandbox with shader support", page: "https://github.com/luanti-org/luanti", repo: "luanti-org/luanti", asset: ["arm64.zip"], keys: ["luanti", "minetest"]),
+        .init(id: "srb2", game: "Sonic Robo Blast 2", port: "SRB2", note: "Free 3D Sonic fangame, OpenGL renderer", page: "https://github.com/STJr/SRB2", repo: "STJr/SRB2", asset: ["macos-installer.dmg"], keys: ["srb2", "robo blast"]),
+        .init(id: "redeclipse", game: "Red Eclipse", port: "Red Eclipse", note: "Free fast arena shooter (950 MB)", page: "https://github.com/redeclipse/base", repo: "redeclipse/base", asset: ["mac.tar.bz2"], keys: ["red eclipse", "redeclipse"]),
+        .init(id: "soh", game: "Zelda: Ocarina of Time", port: "Ship of Harkinian", note: "PC port, needs your own ROM", page: "https://github.com/HarbourMasters/Shipwright", repo: "HarbourMasters/Shipwright", asset: ["mac.zip"], keys: ["harkinian"]),
+        .init(id: "edgeoftime", game: "Spider-Man: Edge of Time", port: "EdgeOfTimeRecomp", note: "Recompilation for Apple Silicon, Vulkan 1.2; needs your own Xbox 360 dump", page: "https://github.com/goliathret/EdgeOfTimeRecomp", repo: "goliathret/EdgeOfTimeRecomp", asset: ["mac-arm64", ".dmg"], status: .tested, keys: ["edge of time", "edgeoftime", "reeot"]),
     ]
 }
 
@@ -102,7 +103,22 @@ struct HubOffer: Identifiable {
 }
 
 struct GameHubView: View {
+    @EnvironmentObject var store: Store
     var addGame: () -> Void
+    @State private var apps: [String] = []
+
+    private func norm(_ s: String) -> String { s.lowercased().replacingOccurrences(of: ".app", with: "") }
+    private func hit(_ p: HubPort, _ names: [String]) -> Bool {
+        names.contains { n in let n = norm(n); return p.keys.contains { $0.hasPrefix("=") ? n == String($0.dropFirst()) : n.contains($0) } }
+    }
+    private func inList(_ p: HubPort) -> Bool { hit(p, store.games.map(\.name)) }
+    private func onDisk(_ p: HubPort) -> Bool { hit(p, apps) }
+    private func scanApps() {
+        let fm = FileManager.default, home = fm.homeDirectoryForCurrentUser.path
+        apps = ["/Applications", home + "/Applications", HubInstaller.folder.path].flatMap { d in
+            ((try? fm.contentsOfDirectory(atPath: d)) ?? []) + ((try? fm.contentsOfDirectory(atPath: d + "/Games")) ?? [])
+        }.filter { $0.hasSuffix(".app") }
+    }
     @StateObject private var installer = HubInstaller()
 
     var body: some View {
@@ -117,11 +133,14 @@ struct GameHubView: View {
                                 Text(p.game).font(.system(size: 16, weight: .heavy))
                                 Text(p.port).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent)
                                 Text(LocalizedStringKey(p.note)).font(.system(size: 13)).foregroundStyle(Theme.muted)
-                                Pill(text: label(p.status), color: p.status == .tested ? Theme.good : p.status == .likely ? Theme.warn : Theme.muted)
+                                HStack(spacing: 6) {
+                                    Pill(text: label(p.status), color: p.status == .tested ? Theme.good : p.status == .likely ? Theme.warn : Theme.muted)
+                                    if inList(p) { Pill(text: L("In MacShade"), color: Theme.accent) } else if onDisk(p) { Pill(text: L("Installed"), color: Theme.accent) }
+                                }
                             }
                             Spacer(minLength: 12)
                             VStack(alignment: .trailing, spacing: 8) {
-                                if p.repo != nil {
+                                if p.repo != nil && !inList(p) && !onDisk(p) {
                                     Button { Task { await installer.prepare(p) } } label: {
                                         if installer.busy == p.id { ProgressView().controlSize(.small) } else { Label("Download", systemImage: "arrow.down.circle") }
                                     }.buttonStyle(SoftButton(tint: Theme.accent)).disabled(installer.busy != nil)
@@ -134,6 +153,7 @@ struct GameHubView: View {
                 Button { addGame() } label: { Label("Add game", systemImage: "plus") }.buttonStyle(SoftButton())
             }.padding(28).frame(maxWidth: 760, alignment: .leading)
         }
+        .onAppear(perform: scanApps).onChange(of: installer.busy) { _ in scanApps() }
         .alert(item: $installer.offer) { o in
             Alert(title: Text(L("Download this file?")),
                   message: Text("\(o.name)\n\(ByteCountFormatter.string(fromByteCount: Int64(o.size), countStyle: .file))\n\(o.url.host ?? "")"),

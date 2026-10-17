@@ -37,6 +37,13 @@ struct WelcomeView: View {
 
 enum GameTab: String, CaseIterable { case look = "Look", start = "Start", keys = "Keys", performance = "Performance", advanced = "Advanced" }
 
+struct UninstallButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 13, weight: .bold)).foregroundStyle(.white).padding(.horizontal, 16).padding(.vertical, 9)
+            .background(Color(hex: 0xC93C3C).opacity(configuration.isPressed ? 0.75 : 1), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
 struct GameDetail: View {
     @Binding var game: Game
     var onRemove: () -> Void
@@ -49,6 +56,9 @@ struct GameDetail: View {
     @State private var activePreset = ""
     @State private var confirmReset = false
     @State private var copyUsage: Int64 = 0
+    @State private var banner: NSImage?
+    @State private var uninstallStep = 0
+    @State private var uninstallError: String?
 
     private var phase: Phase { launcher.phase(of: game.id) }
     private var busy: Bool { if case .preparing = phase { return true }; return phase == .running }
@@ -122,6 +132,48 @@ struct GameDetail: View {
                 Text(L("In the game: %@ opens ReShade", game.overlayKey.label)).font(.system(size: 12)).foregroundStyle(Theme.muted)
             }
         }.padding(.horizontal, 36).padding(.top, 28).padding(.bottom, 22)
+        .frame(minHeight: banner == nil ? 0 : 210)
+        .background { bannerBackground }
+        .overlay(alignment: .topTrailing) { bannerMenu.padding(10) }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in   // an image dropped on the header becomes the banner
+            guard let p = providers.first else { return false }
+            _ = p.loadObject(ofClass: URL.self) { url, _ in if let url { Task { @MainActor in setBanner(from: url) } } }
+            return true
+        }
+        .onAppear { banner = NSImage(contentsOf: Paths.banner(for: game)) }
+    }
+
+    @ViewBuilder private var bannerBackground: some View {
+        if let banner {
+            Image(nsImage: banner).resizable().scaledToFill().frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
+                .overlay(LinearGradient(colors: [Theme.bg.opacity(0.94), Theme.bg.opacity(0.55), Theme.bg.opacity(0.15)], startPoint: .leading, endPoint: .trailing))
+                .overlay(LinearGradient(colors: [.clear, Theme.bg], startPoint: .center, endPoint: .bottom))
+        }
+    }
+
+    private var bannerMenu: some View {
+        Menu {
+            Button("Choose banner image …") { chooseBanner() }
+            Button("Find fan art (SteamGridDB) …") {
+                var c = URLComponents(string: "https://www.steamgriddb.com/search/grids")!; c.queryItems = [URLQueryItem(name: "term", value: game.name)]
+                NSWorkspace.shared.open(c.url!)
+            }
+            if banner != nil { Divider(); Button("Remove banner") { try? FileManager.default.removeItem(at: Paths.banner(for: game)); banner = nil } }
+        } label: { Image(systemName: "photo") }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30, height: 30)
+            .background(Theme.card.opacity(0.85), in: RoundedRectangle(cornerRadius: 8)).help(L("Banner"))
+    }
+
+    private func chooseBanner() {
+        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.message = L("Choose a banner image (about 3:1, e.g. 1920×620)")
+        if panel.runModal() == .OK, let url = panel.url { setBanner(from: url) }
+    }
+
+    private func setBanner(from url: URL) {
+        guard NSImage(contentsOf: url) != nil else { return }
+        let fm = FileManager.default; try? fm.createDirectory(at: Paths.banners, withIntermediateDirectories: true)
+        let dest = Paths.banner(for: game); try? fm.removeItem(at: dest)
+        if (try? fm.copyItem(at: url, to: dest)) != nil { banner = NSImage(contentsOf: dest) }
     }
 
     @ViewBuilder private var statusView: some View {
@@ -307,8 +359,45 @@ struct GameDetail: View {
                     Button("Remove from list", role: .destructive, action: onRemove).buttonStyle(SoftButton(tint: Theme.bad)).disabled(busy)
                 }
             }
+            Card {
+                Text("Uninstall game").font(.system(size: 15, weight: .bold))
+                Text("Moves the game, its data folders from the start parameters, the game copy and the MacShade settings for it to the Trash.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                Button { uninstallStep = 1 } label: { Label("Uninstall game …", systemImage: "trash") }
+                    .buttonStyle(UninstallButtonStyle()).disabled(busy)
+                if let e = uninstallError { Text(e).font(.caption).foregroundStyle(Theme.bad) }
+            }
             if hasLog { logBox }
         }
+        .alert(L("Uninstall “%@”?", game.name), isPresented: Binding(get: { uninstallStep == 1 }, set: { if !$0 && uninstallStep == 1 { uninstallStep = 0 } })) {
+            Button(L("Cancel"), role: .cancel) { uninstallStep = 0 }
+            Button(L("Continue …"), role: .destructive) { uninstallStep = 2 }
+        } message: { Text(uninstallTargets.map(\.path).joined(separator: "\n")) }
+        .alert(L("Really uninstall “%@”?", game.name), isPresented: Binding(get: { uninstallStep == 2 }, set: { if !$0 && uninstallStep == 2 { uninstallStep = 0 } })) {
+            Button(L("Cancel"), role: .cancel) { uninstallStep = 0 }
+            Button(L("Move to Trash"), role: .destructive) { uninstall() }
+        } message: { Text(L("The items above go to the Trash and the game leaves your list. You can still restore them from the Trash.")) }
+    }
+
+    /// The game itself plus every existing folder named in its start parameters (e.g. `+set fs_basepath /path/to/data`), with symlinks resolved.
+    private var uninstallTargets: [URL] {
+        let fm = FileManager.default
+        var out = [URL(fileURLWithPath: game.sourcePath)]
+        for token in game.arguments.split(separator: " ").map(String.init) where token.hasPrefix("/") {
+            let u = URL(fileURLWithPath: token).resolvingSymlinksInPath()
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: u.path, isDirectory: &isDir), isDir.boolValue, u.pathComponents.count > 2, !["/Applications", "/Users", "/Volumes", "/System", "/Library"].contains(u.path), u.path != fm.homeDirectoryForCurrentUser.path else { continue }
+            if !out.contains(u) { out.append(u) }
+        }
+        return out
+    }
+
+    private func uninstall() {
+        uninstallStep = 0; uninstallError = nil
+        var failed: [String] = []
+        for u in uninstallTargets + [Paths.copy(for: game), Paths.instance(for: game), Paths.banner(for: game)] where FileManager.default.fileExists(atPath: u.path) {
+            do { try FileManager.default.trashItem(at: u, resultingItemURL: nil) } catch { failed.append("\(u.lastPathComponent): \(error.localizedDescription)") }
+        }
+        if failed.isEmpty { onRemove() } else { uninstallError = failed.joined(separator: "\n") }
     }
 
     private var logBox: some View {

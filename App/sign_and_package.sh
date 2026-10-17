@@ -13,6 +13,13 @@ VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$A/Con
 DMG=MacShade-$VERSION.dmg
 
 echo "signing with: $IDENTITY"
+# Sparkle (updater): sign its nested helpers first, then the framework, then everything else (inside out)
+SP="$A/Contents/Frameworks/Sparkle.framework/Versions/B"
+if [ -d "$SP" ]; then
+  for x in "$SP/XPCServices/Installer.xpc" "$SP/XPCServices/Downloader.xpc"; do [ -e "$x" ] && codesign --force --timestamp --options runtime --preserve-metadata=entitlements -s "$IDENTITY" "$x"; done
+  codesign --force --timestamp --options runtime -s "$IDENTITY" "$SP/Autoupdate" "$SP/Updater.app"
+  codesign --force --timestamp --options runtime -s "$IDENTITY" "$A/Contents/Frameworks/Sparkle.framework"
+fi
 for f in "$A"/Contents/Resources/*.dylib; do codesign --force --timestamp --options runtime -s "$IDENTITY" "$f"; done
 codesign --force --timestamp --options runtime -s "$IDENTITY" "$A"
 codesign --verify --deep --strict --verbose=2 "$A"

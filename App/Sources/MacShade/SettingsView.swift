@@ -7,6 +7,7 @@ struct SettingsView: View {
     var embedded = true
     var showPackages: () -> Void = {}
     @State private var keys = GlobalKeys.load()
+    @EnvironmentObject var updates: UpdateChecker
     @State private var keysApplied = false
     @State private var importMessage: String?
     @State private var importing = false
@@ -66,6 +67,13 @@ struct SettingsView: View {
                 }
             }
             .onChange(of: keys) { GlobalKeys.save($0) }
+
+            Card {
+                Text("Updates").font(.system(size: 15, weight: .bold))
+                Text(L("Version %@", (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "?")).font(.system(size: 13)).foregroundStyle(Theme.muted)
+                Toggle("Check for updates automatically", isOn: Binding(get: { updates.automatic }, set: { updates.automatic = $0 })).toggleStyle(.switch).tint(Theme.accent)
+                Button("Check for updates now") { updates.updater.checkForUpdates() }.buttonStyle(SoftButton(tint: Theme.accent))
+            }
 
             Card {
                 Text("Shaders and effects").font(.system(size: 15, weight: .bold))

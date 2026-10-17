@@ -20,7 +20,10 @@ struct Game: Codable, Identifiable, Hashable {
     var fpsLimit = 0
 
     enum CodingKeys: String, CodingKey { case id, name, sourcePath, arguments, suppressRestoreDialog, overlayKey, screenshotKey, effectsKey, autoStart, pipeline, fpsLimit }
-    init(name: String, sourcePath: String) { self.name = name; self.sourcePath = sourcePath }
+    init(name: String, sourcePath: String) {
+        self.name = name; self.sourcePath = sourcePath
+        let d = GlobalKeys.load(); overlayKey = d.overlay; screenshotKey = d.screenshot; effectsKey = d.effects   // new games always start from the global shortcuts
+    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
@@ -32,8 +35,8 @@ struct Game: Codable, Identifiable, Hashable {
         else if let old = try? c.decode(String.self, forKey: .overlayKey) {   // earlier versions stored a preset name
             overlayKey = ["f10": KeyBinding(vk: 0x79), "ctrlShiftO": KeyBinding(vk: 0x4F, ctrl: true, shift: true), "insert": KeyBinding(vk: 0x2D)][old] ?? .home
         }
-        screenshotKey = (try? c.decode(KeyBinding.self, forKey: .screenshotKey)) ?? .f12
-        effectsKey = (try? c.decode(KeyBinding.self, forKey: .effectsKey)) ?? .end
+        screenshotKey = (try? c.decode(KeyBinding.self, forKey: .screenshotKey)) ?? GlobalKeys.load().screenshot
+        effectsKey = (try? c.decode(KeyBinding.self, forKey: .effectsKey)) ?? GlobalKeys.load().effects
         autoStart = try c.decodeIfPresent(Bool.self, forKey: .autoStart) ?? false
         pipeline = try c.decodeIfPresent(Bool.self, forKey: .pipeline) ?? true
         fpsLimit = try c.decodeIfPresent(Int.self, forKey: .fpsLimit) ?? 0
@@ -98,6 +101,8 @@ enum Paths {
     static var dylib: URL { Bundle.main.resourceURL!.appendingPathComponent("libmacshade.dylib") }
 
     static func instance(for game: Game) -> URL { instances.appendingPathComponent(game.id.uuidString) }
+    static let banners = support.appendingPathComponent("Banners")
+    static func banner(for game: Game) -> URL { banners.appendingPathComponent(game.id.uuidString + ".img") }
 
     /// Copies the bundled effect collections to Application Support on first run, so users can add their own .fx files.
     static func seed() {

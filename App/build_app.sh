@@ -11,6 +11,7 @@ need_arm64 "$ROOT/mac/build/libmacshade.dylib"; need_arm64 "$MOLTENVK"
 swift build -c release
 A=MacShade.app; rm -rf $A; mkdir -p $A/Contents/MacOS $A/Contents/Resources
 cp .build/release/MacShade $A/Contents/MacOS/
+mkdir -p $A/Contents/Frameworks; ditto .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework $A/Contents/Frameworks/Sparkle.framework   # updater
 python3 gen_strings.py >/dev/null; cp -R Resources/*.lproj Resources/Presets $A/Contents/Resources/   # UI translations, presets shipped with the app
 cp "$ROOT/mac/build/libmacshade.dylib" $A/Contents/Resources/
 cp Resources/AppIcon.icns $A/Contents/Resources/
@@ -26,8 +27,11 @@ cat > $A/Contents/Info.plist <<P
 <key>CFBundleExecutable</key><string>MacShade</string><key>CFBundleIdentifier</key><string>local.macshade</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string><key>CFBundleLocalizations</key><array><string>en</string><string>de</string><string>fr</string><string>es</string><string>it</string><string>pt</string><string>ja</string><string>zh-Hans</string></array>
 <key>CFBundleIconFile</key><string>AppIcon</string><key>CFBundleName</key><string>MacShade</string><key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2</string><key>LSMinimumSystemVersion</key><string>13.0</string>
-<key>NSHighResolutionCapable</key><true/></dict></plist>
+<key>CFBundleShortVersionString</key><string>0.3</string><key>CFBundleVersion</key><string>3</string><key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>SUFeedURL</key><string>https://raw.githubusercontent.com/klotzbrocken/MacShade/main/appcast.xml</string>
+<key>SUPublicEDKey</key><string>8WqgQSrOZQvlCDN3RrwljsPkuElckJc9ZJ8oPHyKkyc=</string>
+<key>SUEnableAutomaticChecks</key><true/></dict></plist>
 P
 codesign --force --deep -s - $A
 codesign --verify --deep --strict $A && echo "signature ok"
