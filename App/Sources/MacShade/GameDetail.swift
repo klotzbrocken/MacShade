@@ -343,9 +343,10 @@ struct GameDetail: View {
             HStack(alignment: .top, spacing: 16) {
                 Card {
                     Text("Game copy").font(.system(size: 15, weight: .bold))
+                    if game.captureMode { Text("Not used in screen filter mode: the original app is started.").font(.system(size: 13)).foregroundStyle(Theme.accent) }
                     Text(copyUsage == 0 ? L("There is no copy yet.") : L("Frees %@. It is made again at the next start.", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file))).font(.system(size: 13)).foregroundStyle(Theme.muted)
                     Flow {
-                        Button("Recreate the game copy") { launcher.start(game, force: true) }.buttonStyle(SoftButton()).disabled(busy)
+                        Button("Recreate the game copy") { launcher.start(game, force: true) }.buttonStyle(SoftButton()).disabled(busy || game.captureMode)
                         Button("Delete the game copy") { Paths.deleteCopy(of: game); copyUsage = 0 }.buttonStyle(SoftButton(tint: Theme.bad)).disabled(busy || copyUsage == 0)
                     }
                     Divider().overlay(Theme.line)

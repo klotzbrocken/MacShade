@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.23)
+# the library is loaded into games on every macOS the app supports (13 and later), not only the one it is built on
+set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Minimum macOS version" FORCE)
 project(MacShadeLayer LANGUAGES C CXX OBJCXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OBJCXX_STANDARD 17)
@@ -69,7 +71,8 @@ foreach(t rs_objs macshade)
     VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=0 VMA_STATS_STRING_ENABLED=0 UTF_CPP_CPLUSPLUS=201703L)
   target_compile_options(${t} PRIVATE -fdeclspec -w "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/compat/mac_compat.h")
 endforeach()
-set_source_files_properties(platform/gl_bridge_mac.mm platform/metal_bridge_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+set_source_files_properties(platform/gl_bridge_mac.mm platform/metal_bridge_mac.mm platform/capture_filter_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc -Werror=unguarded-availability-new")
+set_source_files_properties(platform/dll_resources_mac.mm platform/input_mac.mm platform/platform_utils_mac.mm PROPERTIES COMPILE_FLAGS "-Werror=unguarded-availability-new")   # an API newer than the deployment target is a build error, not a crash on older macOS
 set_source_files_properties(${RS}/source/vulkan/vulkan_impl_device.cpp PROPERTIES COMPILE_DEFINITIONS VMA_IMPLEMENTATION)
 set_source_files_properties(${RS}/examples/09-depth/generic_depth_addon.cpp ${RS}/examples/15-effect_runtime_sync/runtime_sync_addon.cpp PROPERTIES COMPILE_DEFINITIONS BUILTIN_ADDON COMPILE_FLAGS "-include reshade.hpp")
 target_link_libraries(rs_objs PRIVATE rs_imgui rs_fpng rs_jxl rs_stb rs_glad)

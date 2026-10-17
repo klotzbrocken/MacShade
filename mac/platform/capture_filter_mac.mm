@@ -54,6 +54,7 @@ namespace
 @property pid_t pid;
 @property HotKey overlayKey, effectsKey;
 - (void)start;
+- (void)hotkey:(UInt32)which;
 @end
 
 static MSFilterController *s_controller = nil;
@@ -64,10 +65,6 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	dispatch_async(dispatch_get_main_queue(), ^{ [s_controller hotkey:id.id]; });
 	return noErr;
 }
-
-@interface MSFilterController ()
-- (void)hotkey:(UInt32)which;
-@end
 
 @implementation MSFilterController
 {

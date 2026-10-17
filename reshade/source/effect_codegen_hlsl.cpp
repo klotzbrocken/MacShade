@@ -9,6 +9,7 @@
 #include <cctype> // std::tolower
 #include <cassert>
 #include <cstring> // stricmp, std::memcmp
+#include <cstdio>
 #include <charconv> // std::from_chars, std::to_chars
 #include <algorithm> // std::equal, std::find, std::find_if, std::max
 
@@ -293,13 +294,10 @@ protected:
 						break;
 					case type::t_float:
 						char temp[64];
-						const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), initializer_value.as_float[i]
-#if !defined(_HAS_COMPLETE_CHARCONV) || _HAS_COMPLETE_CHARCONV
-							, std::chars_format::scientific, 8
-#endif
-						);
-						if (res.ec == std::errc())
-							preamble.append(temp, res.ptr);
+						// std::to_chars for floating point needs macOS 13.3; snprintf gives the same scientific notation
+						const int length = std::snprintf(temp, sizeof(temp), "%.8e", static_cast<double>(initializer_value.as_float[i]));
+						if (length > 0)
+							preamble.append(temp, temp + length);
 						else
 							assert(false);
 						break;
@@ -628,13 +626,9 @@ protected:
 				}
 				{
 					char temp[64];
-					const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i]
-#if !defined(_HAS_COMPLETE_CHARCONV) || _HAS_COMPLETE_CHARCONV
-						, std::chars_format::scientific, 8
-#endif
-						);
-					if (res.ec == std::errc())
-						s.append(temp, res.ptr);
+					const int length = std::snprintf(temp, sizeof(temp), "%.8e", static_cast<double>(data.as_float[i]));
+					if (length > 0)
+						s.append(temp, temp + length);
 					else
 						assert(false);
 				}
