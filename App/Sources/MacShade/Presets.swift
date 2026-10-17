@@ -129,6 +129,7 @@ import Foundation
             case "prod80_02_Bloom": out.append(("Bloom", L("Realistic glow around bright areas")))
             case "Tonemap": out.append(("Tonemap", L("Gamma, saturation and a touch of bleach")))
             case "Curves": out.append(("Curves", L("Contrast S-curve")))
+            case "Vignette": out.append(("Vignette", L("Darker screen edges")))
             case "LumaSharpen": out.append(("LumaSharpen", L("Sharpens textures")))
             case "FXAA": out.append(("FXAA", L("Smooths jagged edges")))
             case "Technicolor": out.append(("Technicolor", L("Film colour grade")))
