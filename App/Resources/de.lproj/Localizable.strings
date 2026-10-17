@@ -1,3 +1,12 @@
+"Better port: %@" = "Besserer Port: %@";
+"Better experience: %@" = "Besseres Spielerlebnis mit: %@";
+"Open page" = "Seite öffnen";
+"Native Quake II port with OpenGL and Vulkan renderers and mod support (bots too)." = "Nativer Quake-II-Port mit OpenGL- und Vulkan-Renderer und Mod-Unterstützung (auch für Bots).";
+"Open-source Quake III Arena engine for the Mac." = "Quelloffene Quake-III-Arena-Engine für den Mac.";
+"Vulkan-based Quake port for Apple Silicon; works directly with MacShade." = "Vulkan-basierter Quake-Port für Apple Silicon; funktioniert direkt mit MacShade.";
+"Modern Doom engine with Vulkan; works directly with MacShade." = "Moderne Doom-Engine mit Vulkan; funktioniert direkt mit MacShade.";
+"Community patch that keeps Unreal Tournament 99 running on modern systems." = "Community-Patch, der Unreal Tournament 99 auf modernen Systemen lauffähig hält.";
+"Runs only through its own launcher (EA app) and refuses a modified copy, so MacShade cannot load ReShade into it." = "Läuft nur über den eigenen Launcher (EA-App) und lehnt eine veränderte Kopie ab, daher kann MacShade ReShade nicht einhängen.";
 "Vulkan (direct)" = "Vulkan (direkt)";
 "ReShade loaded, but no graphics path was hooked" = "ReShade geladen, aber kein Grafikpfad eingehängt";
 "Last start: %@" = "Letzter Start: %@";

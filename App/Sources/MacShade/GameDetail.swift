@@ -108,6 +108,7 @@ struct GameDetail: View {
                     if copyUsage > 0 { Pill(text: L("Game copy ready · %@", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file)), color: Theme.good) }
                     statusView
                 }
+                if let why = PortAdvice.incompatible(game.name) { Text(why).font(.caption).foregroundStyle(Theme.warn) }
                 if let info, !info.archs.contains("arm64") { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn) }
             }
             Spacer(minLength: 12)
@@ -137,6 +138,18 @@ struct GameDetail: View {
     private var lookTab: some View {
         let builtIn = Presets.bundledNames(for: game)
         return VStack(alignment: .leading, spacing: 20) {
+            if let b = PortAdvice.better(for: game.name) {
+                Card {
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L("Better experience: %@", b.name)).font(.system(size: 15, weight: .bold))
+                            Text(b.why).font(.system(size: 13)).foregroundStyle(Theme.muted)
+                        }
+                        Spacer()
+                        Link("Open page", destination: b.url).buttonStyle(.plain).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent)
+                    }
+                }
+            }
             HStack(alignment: .bottom) {
                 SectionTitle("Choose your look", "The chosen look is loaded at the next start. In the game you can change it live.")
                 Spacer()

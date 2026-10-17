@@ -1,3 +1,12 @@
+"Better port: %@" = "更好的移植版：%@";
+"Better experience: %@" = "更佳体验：%@";
+"Open page" = "打开页面";
+"Native Quake II port with OpenGL and Vulkan renderers and mod support (bots too)." = "原生 Quake II 移植版，支持 OpenGL 和 Vulkan 渲染器及模组（含机器人）。";
+"Open-source Quake III Arena engine for the Mac." = "适用于 Mac 的开源 Quake III Arena 引擎。";
+"Vulkan-based Quake port for Apple Silicon; works directly with MacShade." = "适用于 Apple Silicon 的 Vulkan 版 Quake 移植，可直接配合 MacShade 使用。";
+"Modern Doom engine with Vulkan; works directly with MacShade." = "支持 Vulkan 的现代 Doom 引擎，可直接配合 MacShade 使用。";
+"Community patch that keeps Unreal Tournament 99 running on modern systems." = "让 Unreal Tournament 99 在新系统上继续运行的社区补丁。";
+"Runs only through its own launcher (EA app) and refuses a modified copy, so MacShade cannot load ReShade into it." = "只能通过自己的启动器（EA app）运行并拒绝修改过的副本，因此 MacShade 无法加载 ReShade。";
 "Vulkan (direct)" = "Vulkan（直接）";
 "ReShade loaded, but no graphics path was hooked" = "ReShade 已加载，但未挂接任何图形路径";
 "Last start: %@" = "上次启动：%@";

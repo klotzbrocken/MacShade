@@ -6,7 +6,7 @@ struct GameCandidate: Identifiable, Hashable {
     var name: String
     var path: String
     var info: GameInfo
-    var supported: Bool { info.archs.contains("arm64") && info.api != .staticVulkan }
+    var supported: Bool { info.archs.contains("arm64") && info.api != .staticVulkan && PortAdvice.incompatible(name) == nil }
     static func == (a: GameCandidate, b: GameCandidate) -> Bool { a.path == b.path }
     func hash(into h: inout Hasher) { h.combine(path) }
 }
@@ -89,7 +89,8 @@ struct DiscoverView: View {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(c.name).font(.headline)
                                         Text(c.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-                                        Text(c.supported ? c.info.api.label : (c.info.api == .staticVulkan ? c.info.api.label : c.info.archs == "?" ? L("Cannot read the program (a launcher script?) – ReShade cannot be loaded.") : L("No arm64 version – ReShade cannot be loaded."))).font(.caption).foregroundStyle(c.supported ? Color.secondary : Color.orange)
+                                        Text(PortAdvice.incompatible(c.name) ?? (c.supported ? c.info.api.label : (c.info.api == .staticVulkan ? c.info.api.label : c.info.archs == "?" ? L("Cannot read the program (a launcher script?) – ReShade cannot be loaded.") : L("No arm64 version – ReShade cannot be loaded.")))).font(.caption).foregroundStyle(c.supported ? Color.secondary : Color.orange)
+                                        if let b = PortAdvice.better(for: c.name) { Link(L("Better port: %@", b.name), destination: b.url).font(.caption) }
                                     }
                                     Spacer()
                                 }
