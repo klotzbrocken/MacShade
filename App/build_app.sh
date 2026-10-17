@@ -14,6 +14,7 @@ cp .build/release/MacShade $A/Contents/MacOS/
 mkdir -p $A/Contents/Frameworks; ditto .build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework $A/Contents/Frameworks/Sparkle.framework   # updater
 python3 gen_strings.py >/dev/null; cp -R Resources/*.lproj Resources/Presets $A/Contents/Resources/   # UI translations, presets shipped with the app
 cp "$ROOT/mac/build/libmacshade.dylib" $A/Contents/Resources/
+clang -fobjc-arc -arch arm64 -mmacosx-version-min=13.0 -framework Foundation -o $A/Contents/MacOS/MacShadeFilter Helper/MacShadeFilter.m   # screen filter mode helper (loads libmacshade)
 cp Resources/AppIcon.icns $A/Contents/Resources/
 cp "$MOLTENVK" $A/Contents/Resources/libMoltenVK.dylib   # driver for the OpenGL/Metal bridge
 # effect collections (each: Shaders/ and Textures/)
@@ -31,7 +32,8 @@ cat > $A/Contents/Info.plist <<P
 <key>NSHighResolutionCapable</key><true/>
 <key>SUFeedURL</key><string>https://raw.githubusercontent.com/klotzbrocken/MacShade/main/appcast.xml</string>
 <key>SUPublicEDKey</key><string>8WqgQSrOZQvlCDN3RrwljsPkuElckJc9ZJ8oPHyKkyc=</string>
-<key>SUEnableAutomaticChecks</key><true/></dict></plist>
+<key>SUEnableAutomaticChecks</key><true/>
+<key>NSScreenCaptureUsageDescription</key><string>MacShade captures the window of a game to apply ReShade effects (screen filter mode).</string></dict></plist>
 P
 codesign --force --deep -s - $A
 codesign --verify --deep --strict $A && echo "signature ok"

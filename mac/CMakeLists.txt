@@ -59,7 +59,7 @@ set(PLATFORM_REST platform/dll_log_mac.cpp platform/frame_limit_mac.cpp platform
 add_library(rs_objs OBJECT ${PLATFORM_COMMON} ${SRC} ${PLATFORM_REST} platform/late_init_mac.cpp)
 
 # injected with DYLD_INSERT_LIBRARIES: emulates the Vulkan loader, interposes MoltenVK
-add_library(macshade SHARED platform/vk_loader_emulation.cpp platform/vk_bridge_mac.cpp platform/gl_bridge_mac.mm platform/metal_bridge_mac.mm $<TARGET_OBJECTS:rs_objs>)
+add_library(macshade SHARED platform/vk_loader_emulation.cpp platform/vk_bridge_mac.cpp platform/gl_bridge_mac.mm platform/metal_bridge_mac.mm platform/capture_filter_mac.mm $<TARGET_OBJECTS:rs_objs>)
 set_target_properties(rs_objs macshade PROPERTIES CXX_VISIBILITY_PRESET hidden)
 set_target_properties(macshade PROPERTIES PREFIX "lib" OUTPUT_NAME "macshade")
 foreach(t rs_objs macshade)
@@ -74,7 +74,7 @@ set_source_files_properties(${RS}/source/vulkan/vulkan_impl_device.cpp PROPERTIE
 set_source_files_properties(${RS}/examples/09-depth/generic_depth_addon.cpp ${RS}/examples/15-effect_runtime_sync/runtime_sync_addon.cpp PROPERTIES COMPILE_DEFINITIONS BUILTIN_ADDON COMPILE_FLAGS "-include reshade.hpp")
 target_link_libraries(rs_objs PRIVATE rs_imgui rs_fpng rs_jxl rs_stb rs_glad)
 foreach(t macshade)
-  target_link_libraries(${t} PRIVATE rs_imgui rs_fpng rs_jxl rs_stb rs_glad "-framework Foundation" "-framework AppKit" "-framework CoreGraphics" "-framework Carbon" "-framework QuartzCore" "-framework Metal" "-framework GameController" "-framework OpenGL" "-framework IOSurface")
+  target_link_libraries(${t} PRIVATE rs_imgui rs_fpng rs_jxl rs_stb rs_glad "-framework Foundation" "-framework AppKit" "-framework CoreGraphics" "-framework Carbon" "-framework QuartzCore" "-framework Metal" "-framework GameController" "-framework OpenGL" "-framework IOSurface" "-framework ScreenCaptureKit" "-framework CoreMedia" "-framework CoreVideo")
   target_link_options(${t} PRIVATE -undefined dynamic_lookup)
   add_custom_command(TARGET ${t} POST_BUILD COMMAND codesign -f -s - $<TARGET_FILE:${t}>)
 endforeach()
