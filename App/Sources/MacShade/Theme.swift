@@ -42,7 +42,7 @@ struct Pill: View {
     let text: String
     var color: Color = Theme.muted
     var body: some View {
-        Text(text).font(.system(size: 12, weight: .semibold)).foregroundStyle(color)
+        Text(text).font(.system(size: 12, weight: .semibold)).foregroundStyle(color).lineLimit(1).fixedSize()
             .padding(.horizontal, 10).padding(.vertical, 4).background(color.opacity(0.14), in: Capsule())
     }
 }
