@@ -31,8 +31,6 @@ packaged as a library that is injected into games, plus a SwiftUI launcher app t
 | OpenGL (e.g. UT2004, UT99, ioquake3) | Bridge: frame → IOSurface → ReShade on a private Vulkan device → back | experimental |
 | Metal (e.g. Quetoo / SDL_GPU) | Same bridge, tapped at `presentDrawable:` | experimental |
 
-**Screen filter mode (opt-in, per game, off by default):** for games MacShade cannot hook at all (Metal titles from the Mac App Store, copy-protected or hardened games, Intel-only games under Rosetta) there is a second way. The game starts completely unchanged (no copy, no injection). A helper (`MacShadeFilter`) captures the game window with ScreenCaptureKit, runs every frame through the same ReShade bridge and shows the result in a borderless window right above the game; mouse input passes through. The ReShade menu and the effect toggle are opened with global hotkeys. Costs one or two frames of delay, has no depth buffer, needs the Screen Recording permission and works best in a window or borderless mode. Enable it under *Advanced* of a game.
-
 **Not supported:** Windows games through Wine/CrossOver/Whisky (Direct3D), x86_64-only or 32-bit games, games with a *statically linked* MoltenVK (e.g. Raze), VR.
 
 **How do I know whether a game works?** When you add a game, the launcher inspects its executable (architectures, linked graphics libraries) and shows the graphics path or why it cannot work.
@@ -104,7 +102,7 @@ keychain profile exists — notarizes and staples it. One-time setup: `xcrun not
 ## Debug environment variables
 
 `MACSHADE_BASE`, `MACSHADE_TRACE`, `MACSHADE_LOG_STDERR`, `MACSHADE_TEST_KEYS=frame:vk,…`, `MACSHADE_CRASH_TRACE`, `MACSHADE_BRIDGE_DEBUG`, `MACSHADE_BRIDGE_STATS=1`,
-`MACSHADE_FILTER_OPEN_OVERLAY=1` (screen filter helper: open ReShade's menu after 4 s), `MACSHADE_LIB`, `MACSHADE_DISABLE_GL_BRIDGE`, `MACSHADE_DISABLE_METAL_BRIDGE`, `MACSHADE_PIPELINE`, `MACSHADE_FPS_LIMIT`, `MACSHADE_NO_DEPTH`.
+`MACSHADE_DISABLE_GL_BRIDGE`, `MACSHADE_DISABLE_METAL_BRIDGE`, `MACSHADE_PIPELINE`, `MACSHADE_FPS_LIMIT`, `MACSHADE_NO_DEPTH`.
 
 ## Credits and licenses
 

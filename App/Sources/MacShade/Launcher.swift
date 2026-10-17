@@ -101,7 +101,6 @@ final class Launcher: ObservableObject {
     /// What ReShade really hooked in the last start, read from its log (nil: not started yet).
     @Published var observedPath: [UUID: String] = [:]
     private var processes: [UUID: Process] = [:]
-    private var gamePIDs: [UUID: pid_t] = [:]   // screen filter mode: the game runs on its own, only the helper is our process
     private var preparing: [UUID: Task<Void, Never>] = [:]   // start in progress (copy being prepared)
     /// True from the click on Start until the game has quit: a second start, removing or moving the copies must wait.
     func isBusy(_ id: UUID) -> Bool { processes[id] != nil || preparing[id] != nil }
@@ -236,7 +235,6 @@ final class Launcher: ObservableObject {
     // MARK: run
     func start(_ game: Game, force: Bool = false) {
         guard !isBusy(game.id) else { return }
-        if game.captureMode { startFiltered(game); return }
         guard FileManager.default.fileExists(atPath: Paths.dylib.path) else { phase[game.id] = .failed(L("libmacshade.dylib is missing from the app bundle.")); return }
         phase[game.id] = .preparing(L("Preparing …")); log[game.id] = ""; reshadeLog[game.id] = ""
         let id = game.id
@@ -288,61 +286,8 @@ final class Launcher: ObservableObject {
                     : .failed(L("Exited (status %d). See the log.", Int(proc.terminationStatus)))
             }
         }
-        try? FileManager.default.removeItem(at: Paths.instances.appendingPathComponent(id.uuidString).appendingPathComponent("ReShade.log"))   // a failed injection must not show the previous start's path
-        observedPath[id] = nil; reshadeLog[id] = nil
         do { try p.run() } catch { phase[id] = .failed(L("Launch failed: %@", error.localizedDescription)); return }
         processes[id] = p; phase[id] = .running
-        timers[id] = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { _ in Task { @MainActor in self.readLog(id, logURL) } }
-    }
-
-    // MARK: screen filter mode
-    /// Starts the game normally (no copy, no injection) and the helper that filters its window.
-    private func startFiltered(_ game: Game) {
-        let id = game.id
-        guard let helper = Bundle.main.url(forAuxiliaryExecutable: "MacShadeFilter"), FileManager.default.fileExists(atPath: Paths.dylib.path) else { phase[id] = .failed(L("The screen filter helper is missing from the app bundle.")); return }
-        phase[id] = .preparing(L("Starting the game …")); log[id] = ""; reshadeLog[id] = ""
-        let instance = Launcher.prepareInstance(game)
-        let logURL = Paths.logs.appendingPathComponent("\(id.uuidString).log")
-        FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        try? FileManager.default.removeItem(at: instance.appendingPathComponent("ReShade.log")); observedPath[id] = nil
-        let appURL = URL(fileURLWithPath: game.sourcePath)
-        let begin: (pid_t) -> Void = { pid in self.runHelper(game, helper: helper, pid: pid, instance: instance, logURL: logURL) }
-        if let running = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL && !$0.isTerminated }) { begin(running.processIdentifier); return }
-        var arguments = splitArguments(game.arguments)
-        if game.suppressRestoreDialog { arguments += ["-ApplePersistenceIgnoreState", "YES"] }
-        let config = NSWorkspace.OpenConfiguration(); config.arguments = arguments; config.activates = true
-        NSWorkspace.shared.openApplication(at: appURL, configuration: config) { app, error in
-            Task { @MainActor in
-                if let app { begin(app.processIdentifier) } else { self.phase[id] = .failed(L("Launch failed: %@", error?.localizedDescription ?? "?")) }
-            }
-        }
-    }
-
-    private func runHelper(_ game: Game, helper: URL, pid: pid_t, instance: URL, logURL: URL) {
-        let id = game.id
-        func mac(_ k: KeyBinding) -> String {
-            let code = KeyNames.macToVK.filter { $0.value == k.vk }.keys.min() ?? 0xFFFF
-            return "\(code == 0xFFFF ? -1 : Int(code)):\((k.ctrl ? 1 : 0) | (k.shift ? 2 : 0) | (k.alt ? 4 : 0))"
-        }
-        guard let out = try? FileHandle(forWritingTo: logURL) else { phase[id] = .failed(L("Log file is not writable.")); return }
-        let p = Process(); p.executableURL = helper
-        p.arguments = ["--pid", String(pid), "--overlay", mac(game.overlayKey), "--effects", mac(game.effectsKey)]
-        var env = ProcessInfo.processInfo.environment
-        env["MACSHADE_LIB"] = Paths.dylib.path
-        env["MACSHADE_MOLTENVK"] = Paths.dylib.deletingLastPathComponent().appendingPathComponent("libMoltenVK.dylib").path
-        env["MACSHADE_BASE"] = instance.path
-        if game.fpsLimit > 0 { env["MACSHADE_FPS_LIMIT"] = String(game.fpsLimit) }
-        p.environment = env; p.standardOutput = out; p.standardError = out
-        p.terminationHandler = { proc in
-            Task { @MainActor in
-                self.timers[id]?.invalidate(); self.timers[id] = nil; self.processes[id] = nil; self.gamePIDs[id] = nil
-                self.readLog(id, logURL)
-                if proc.terminationStatus == 3 { self.phase[id] = .failed(L("Screen filter mode needs permission: allow MacShade under System Settings > Privacy & Security > Screen & System Audio Recording, then start again.")); return }
-                self.phase[id] = proc.terminationReason == .exit && (proc.terminationStatus == 0 || proc.terminationStatus == 15) ? .idle : .failed(L("Exited (status %d). See the log.", Int(proc.terminationStatus)))
-            }
-        }
-        do { try p.run() } catch { phase[id] = .failed(L("Launch failed: %@", error.localizedDescription)); return }
-        processes[id] = p; gamePIDs[id] = pid; phase[id] = .running
         timers[id] = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { _ in Task { @MainActor in self.readLog(id, logURL) } }
     }
 
@@ -357,7 +302,7 @@ final class Launcher: ObservableObject {
             if reshadeLog[id] != text { reshadeLog[id] = text }
             let full = String(decoding: data, as: UTF8.self)
             let seen: String? = full.contains("Initializing ReShade")
-                ? (full.contains("Screen filter: processing") ? L("Screen filter") : full.contains("Bridge: pipelined processing") || full.contains("Bridge: processing") ? L("OpenGL/Metal bridge")
+                ? (full.contains("Bridge: pipelined processing") || full.contains("Bridge: processing") ? L("OpenGL/Metal bridge")
                     : full.contains("Running on") ? L("Vulkan (direct)") : L("ReShade loaded, but no graphics path was hooked")) : nil
             if observedPath[id] != seen { observedPath[id] = seen }
         }
@@ -366,7 +311,6 @@ final class Launcher: ObservableObject {
     func stop(_ game: Game) {
         if let t = preparing[game.id] { t.cancel(); phase[game.id] = .idle }   // ponytail: the copy step itself finishes, only the launch is skipped
         processes[game.id]?.terminate()
-        if let pid = gamePIDs[game.id] { NSRunningApplication(processIdentifier: pid)?.terminate() }   // screen filter mode: the game is a separate process
     }
 }
 

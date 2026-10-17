@@ -18,10 +18,8 @@ struct Game: Codable, Identifiable, Hashable {
     var pipeline = true
     /// Frames per second the game is held to (0 = no limit).
     var fpsLimit = 0
-    /// Opt-in "screen filter" mode: the game runs untouched and ReShade filters a capture of its window (see capture_filter_mac.mm). Off by default.
-    var captureMode = false
 
-    enum CodingKeys: String, CodingKey { case id, name, sourcePath, arguments, suppressRestoreDialog, overlayKey, screenshotKey, effectsKey, autoStart, pipeline, fpsLimit, captureMode }
+    enum CodingKeys: String, CodingKey { case id, name, sourcePath, arguments, suppressRestoreDialog, overlayKey, screenshotKey, effectsKey, autoStart, pipeline, fpsLimit }
     init(name: String, sourcePath: String) {
         self.name = name; self.sourcePath = sourcePath
         let d = GlobalKeys.load(); overlayKey = d.overlay; screenshotKey = d.screenshot; effectsKey = d.effects   // new games always start from the global shortcuts
@@ -42,7 +40,6 @@ struct Game: Codable, Identifiable, Hashable {
         autoStart = try c.decodeIfPresent(Bool.self, forKey: .autoStart) ?? false
         pipeline = try c.decodeIfPresent(Bool.self, forKey: .pipeline) ?? true
         fpsLimit = try c.decodeIfPresent(Int.self, forKey: .fpsLimit) ?? 0
-        captureMode = try c.decodeIfPresent(Bool.self, forKey: .captureMode) ?? false
     }
 }
 
