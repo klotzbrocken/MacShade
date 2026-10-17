@@ -26,7 +26,7 @@ cat > $A/Contents/Info.plist <<P
 <key>CFBundleExecutable</key><string>MacShade</string><key>CFBundleIdentifier</key><string>local.macshade</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string><key>CFBundleLocalizations</key><array><string>en</string><string>de</string><string>fr</string><string>es</string><string>it</string><string>pt</string><string>ja</string><string>zh-Hans</string></array>
 <key>CFBundleIconFile</key><string>AppIcon</string><key>CFBundleName</key><string>MacShade</string><key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.1</string><key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>CFBundleShortVersionString</key><string>0.2</string><key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>NSHighResolutionCapable</key><true/></dict></plist>
 P
 codesign --force --deep -s - $A
