@@ -16,6 +16,7 @@ packaged as a library that is injected into games, plus a SwiftUI launcher app t
 
 - Runs ReShade in **native macOS games** (Apple Silicon): Vulkan (MoltenVK), OpenGL and Metal.
 - **Launcher app**: add games by drag & drop or "Find games", pick a look (preset) per game, set start parameters, hotkeys, frame-rate limit — then press *Start with ReShade*.
+- **Game Hub**: 25 recommended source ports (Quake, UT, Doom, OpenMW, ...) with one-click download of the port for those that publish macOS releases on GitHub (you confirm file name, size and source first), or a link to the project page. Only ports, never game data.
 - **Your game stays untouched.** The launcher makes an ad-hoc signed copy of the game (macOS' hardened runtime would block injection into the original) and starts that.
 - **Presets per game**, each with an explanation of the active filters: *Mix* (fast), *Plus* (real bloom), *Max* (everything), *Retro* (CRT look) and more.
 - **Good performance**: pipelined OpenGL/Metal bridge, idle bypass (no cost when no effect is active), own FPS counter, optional frame limiter.

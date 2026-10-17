@@ -8,6 +8,7 @@ struct ContentView: View {
     @State private var showPackages = false
     @State private var showDiscover = false
     @State private var showSettings = false
+    @State private var showHub = false
     @State private var renaming: Game?
     @AppStorage("sidebarWidth") private var sidebarWidth = 264.0
     @State private var dragStartWidth: Double?
@@ -29,7 +30,9 @@ struct ContentView: View {
                     HStack { Image(systemName: "exclamationmark.triangle.fill"); Text(error).font(.callout); Spacer(); Button("Dismiss") { store.storageError = nil } }
                         .padding(8).background(.orange.opacity(0.25))
                 }
-                if showSettings {
+                if showHub {
+                    GameHubView(addGame: pickApp)
+                } else if showSettings {
                     ScrollView { SettingsView(embedded: true, showPackages: { showPackages = true }) }
                 } else if store.games.isEmpty {
                     WelcomeView(pick: pickApp, find: { showDiscover = true })
@@ -56,6 +59,7 @@ struct ContentView: View {
                 for c in await Task.detached(operation: { GameDiscovery.scan(GameDiscovery.defaultFolders(), excluding: known) }).value { print("\(c.name) | \(c.path) | \(c.info.archs) | \(c.info.api.label)") }
                 print("scan done"); exit(0)
             }
+            if CommandLine.arguments.contains("--hub") { showHub = true }
             for g in store.games where g.autoStart { launcher.start(g) }
             let a = CommandLine.arguments
             if let i = a.firstIndex(of: "--select"), i + 1 < a.count, let g = store.games.first(where: { $0.name == a[i + 1] }) { selection = g.id }
@@ -85,8 +89,8 @@ struct ContentView: View {
             ScrollView {
                 VStack(spacing: 2) {
                     ForEach(store.games) { g in
-                        let on = g.id == selection && !showSettings
-                        Button { selection = g.id; showSettings = false } label: {
+                        let on = g.id == selection && !showSettings && !showHub
+                        Button { selection = g.id; showSettings = false; showHub = false } label: {
                             HStack(spacing: 12) {
                                 GameTile(name: g.name, path: g.sourcePath, size: 36)
                                 Text(g.name).font(.system(size: 14, weight: .bold)).lineLimit(1)
@@ -107,9 +111,10 @@ struct ContentView: View {
             }
             VStack(spacing: 8) {
                 Button { pickApp() } label: { Label("Add game", systemImage: "plus").frame(maxWidth: .infinity) }.buttonStyle(SoftButton())
+                Button { showHub.toggle(); showSettings = false } label: { Label("Game Hub", systemImage: "square.grid.2x2").frame(maxWidth: .infinity) }.buttonStyle(SoftButton(tint: showHub ? Theme.accent : Theme.text))
                 HStack(spacing: 8) {
                     Button { showDiscover = true } label: { Label("Find games", systemImage: "magnifyingglass").frame(maxWidth: .infinity) }.buttonStyle(SoftButton())
-                    Button { showSettings.toggle() } label: { Image(systemName: "gearshape") }.buttonStyle(SoftButton(tint: showSettings ? Theme.accent : Theme.text)).help(L("Settings"))
+                    Button { showSettings.toggle(); showHub = false } label: { Image(systemName: "gearshape") }.buttonStyle(SoftButton(tint: showSettings ? Theme.accent : Theme.text)).help(L("Settings"))
                 }
             }
         }
