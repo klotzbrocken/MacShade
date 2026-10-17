@@ -34,6 +34,8 @@ The unmodified ReShade 6.8 core (`reshade/`) runs as `libmacshade.dylib` inside 
 - lldb attach/launch hangs on this setup and leaves `debugserver` processes → use `MACSHADE_CRASH_TRACE` and the crash reports in `~/Library/Logs/DiagnosticReports`.
 - `CRT.fx` (SweetFX) with *Curvature* on renders black through MoltenVK — the Retro presets keep curvature off.
 
+- Quake3e's Vulkan renderer (`quake3e-vulkan`) runs on MoltenVK without ReShade, but with ReShade attached `vkQueueSubmit` returns `VK_ERROR_DEVICE_LOST` right after start, even with no technique enabled. Its OpenGL build works through the bridge. Not investigated further (suspects: the immediate command list flush in ReShade's `vkQueueSubmit` hook, device creation extras).
+
 ## Open points / ideas
 - Games with a statically linked MoltenVK (Raze): the Metal hook would have to handle `-[CAMetalDrawable present]` including command-buffer synchronisation.
 - Depth for OpenGL/Metal on more games; real Metal depth from a game is still unverified.
