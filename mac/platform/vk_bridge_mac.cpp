@@ -11,6 +11,7 @@
 #include "vulkan_impl_swapchain.hpp"
 #include "vulkan_impl_command_queue.hpp"
 #include "runtime_manager.hpp"
+#include "runtime.hpp"
 #include "lockfree_linear_map.hpp"
 #include "dll_log.hpp"
 #include <IOSurface/IOSurfaceRef.h>
@@ -214,6 +215,23 @@ namespace
 	}
 }
 
+// Overlay / effect toggles requested from other threads (the screen filter's hotkeys); applied on the thread that renders the frame.
+#include <atomic>
+static std::atomic<int> s_pending_overlay{ -1 }, s_pending_effects{ 0 };
+static std::atomic<bool> s_overlay_open{ false };
+void macshade_bridge_set_overlay(bool open) { s_pending_overlay = open ? 1 : 0; }
+bool macshade_bridge_overlay_open() { return s_overlay_open; }
+void macshade_bridge_toggle_effects() { s_pending_effects = 1; }
+static reshade::runtime *effect_runtime_of(reshade::vulkan::object_data<VK_OBJECT_TYPE_SWAPCHAIN_KHR> *swapchain) { return static_cast<reshade::api::swapchain *>(swapchain)->get_private_data<reshade::runtime>(); }
+static void apply_pending(reshade::vulkan::object_data<VK_OBJECT_TYPE_SWAPCHAIN_KHR> *swapchain)
+{
+	reshade::runtime *const rt = effect_runtime_of(swapchain);
+	if (rt == nullptr) return;
+	if (const int o = s_pending_overlay.exchange(-1); o >= 0) { const bool ok = rt->open_overlay(o != 0, reshade::api::input_source::keyboard); reshade::log::message(reshade::log::level::info, "Bridge: overlay %s (%s).", o ? "open" : "closed", ok ? "ok" : "refused"); }
+	if (s_pending_effects.exchange(0) != 0) rt->set_effects_state(!rt->get_effects_state());
+	s_overlay_open = rt->overlay_visible();
+}
+
 /// Runs ReShade on one frame that is stored in `io_surface` (BGRA8, width x height). The surface is modified in place.
 /// `layer` is a detached CAMetalLayer of the same size. Returns false if the bridge is unavailable.
 bool macshade_bridge_process(uint32_t width, uint32_t height, void *layer, void *io_surface)
@@ -232,7 +250,9 @@ bool macshade_bridge_process(uint32_t width, uint32_t height, void *layer, void 
 	const auto now = [] { return std::chrono::steady_clock::now(); };
 	const auto ms = [](auto x, auto y) { return std::chrono::duration<double, std::milli>(y - x).count(); };
 	const auto t0 = now();
+	apply_pending(b.swapchain_impl);
 	reshade::present_effect_runtime(b.swapchain_impl);
+	if (reshade::runtime *const rt = effect_runtime_of(b.swapchain_impl)) { const bool v = rt->overlay_visible(); if (v != s_overlay_open) reshade::log::message(reshade::log::level::info, "Bridge: overlay is now %s.", v ? "visible" : "hidden"); s_overlay_open = v; }
 	const auto t1 = now();
 
 	reshade::vulkan::object_data<VK_OBJECT_TYPE_QUEUE> *const queue_impl = b.device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUEUE>(b.queue);

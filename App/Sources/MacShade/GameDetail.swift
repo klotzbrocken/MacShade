@@ -57,6 +57,7 @@ struct GameDetail: View {
     @State private var confirmReset = false
     @State private var copyUsage: Int64 = 0
     @State private var banner: NSImage?
+    @State private var captureAllowed = CGPreflightScreenCaptureAccess()
     @State private var uninstallStep = 0
     @State private var uninstallError: String?
 
@@ -112,14 +113,15 @@ struct GameDetail: View {
                 Flow(spacing: 8) {
                     if let info {
                         Pill(text: info.api.shortLabel, color: info.api == .vulkan ? Theme.good : (info.api == .bridge ? Theme.accent : Theme.warn))
-                        if !info.archs.contains("arm64") { Pill(text: L("Architecture: %@", info.archs), color: Theme.warn) }
+                        if !info.archs.contains("arm64") && !game.captureMode { Pill(text: L("Architecture: %@", info.archs), color: Theme.warn) }
                     }
                     if let seen = launcher.observedPath[game.id], seen != info?.api.shortLabel { Pill(text: L("Last start: %@", seen), color: seen == L("ReShade loaded, but no graphics path was hooked") ? Theme.warn : Theme.accent) }
-                    if copyUsage > 0 { Pill(text: L("Game copy ready · %@", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file)), color: Theme.good) }
+                    if game.captureMode { Pill(text: L("Screen filter"), color: Theme.warn) }
+                    if copyUsage > 0 && !game.captureMode { Pill(text: L("Game copy ready · %@", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file)), color: Theme.good) }
                     statusView
                 }
                 if let why = PortAdvice.incompatible(game.name) { Text(why).font(.caption).foregroundStyle(Theme.warn) }
-                if let info, !info.archs.contains("arm64") { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn) }
+                if let info, !info.archs.contains("arm64"), !game.captureMode { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn) }
             }
             Spacer(minLength: 12)
             VStack(alignment: .trailing, spacing: 8) {
@@ -127,7 +129,7 @@ struct GameDetail: View {
                     Button { launcher.stop(game) } label: { Label("Quit game", systemImage: "stop.fill") }.buttonStyle(BigButton(stop: true))
                 } else {
                     Button { launcher.start(game) } label: { Label("Start with ReShade", systemImage: "play.fill").lineLimit(1).fixedSize() }
-                        .buttonStyle(BigButton()).disabled(busy || info?.api == .staticVulkan).keyboardShortcut(.return, modifiers: .command)
+                        .buttonStyle(BigButton()).disabled(busy || (info?.api == .staticVulkan && !game.captureMode)).keyboardShortcut(.return, modifiers: .command)
                 }
                 Text(L("In the game: %@ opens ReShade", game.overlayKey.label)).font(.system(size: 12)).foregroundStyle(Theme.muted)
             }
@@ -140,7 +142,8 @@ struct GameDetail: View {
             _ = p.loadObject(ofClass: URL.self) { url, _ in if let url { Task { @MainActor in setBanner(from: url) } } }
             return true
         }
-        .onAppear { banner = NSImage(contentsOf: Paths.banner(for: game)) }
+        .onAppear { banner = NSImage(contentsOf: Paths.banner(for: game)); captureAllowed = CGPreflightScreenCaptureAccess() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in captureAllowed = CGPreflightScreenCaptureAccess() }
     }
 
     @ViewBuilder private var bannerBackground: some View {
@@ -358,6 +361,25 @@ struct GameDetail: View {
                     Divider().overlay(Theme.line)
                     Button("Remove from list", role: .destructive, action: onRemove).buttonStyle(SoftButton(tint: Theme.bad)).disabled(busy)
                 }
+            }
+            Card {
+                Text("Screen filter mode (experimental)").font(.system(size: 15, weight: .bold))
+                Text("The game starts unchanged: no copy, nothing injected. MacShade captures the game window and shows it with ReShade on top. This works for games MacShade cannot hook (Metal, Mac App Store, copy protection, Intel-only games). Costs one or two frames of delay, no depth effects. Needs the Screen Recording permission; works best in a window or borderless.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                Toggle("Use the screen filter for this game", isOn: Binding(get: { game.captureMode }, set: { on in
+                    game.captureMode = on
+                    if on && !CGPreflightScreenCaptureAccess() { _ = CGRequestScreenCaptureAccess() }   // ask for the Screen Recording permission now, not at the first start
+                    captureAllowed = CGPreflightScreenCaptureAccess()
+                })).toggleStyle(.switch).tint(Theme.accent).disabled(busy)
+                if game.captureMode {
+                    HStack(spacing: 10) {
+                        Pill(text: captureAllowed ? L("Screen Recording: allowed") : L("Screen Recording: not allowed yet"), color: captureAllowed ? Theme.good : Theme.warn)
+                        if !captureAllowed {
+                            Button("Open System Settings") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!) }.buttonStyle(SoftButton())
+                        }
+                    }
+                    if !captureAllowed { Text("Switch MacShade on in the list, then quit and reopen MacShade.").font(.system(size: 12)).foregroundStyle(Theme.muted) }
+                }
+                if game.captureMode { Text(L("In the game: %@ opens ReShade, %@ switches the effects.", game.overlayKey.label, game.effectsKey.label)).font(.system(size: 12)).foregroundStyle(Theme.muted) }
             }
             Card {
                 Text("Uninstall game").font(.system(size: 15, weight: .bold))

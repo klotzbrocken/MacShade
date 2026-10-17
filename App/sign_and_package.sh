@@ -21,6 +21,7 @@ if [ -d "$SP" ]; then
   codesign --force --timestamp --options runtime -s "$IDENTITY" "$A/Contents/Frameworks/Sparkle.framework"
 fi
 for f in "$A"/Contents/Resources/*.dylib; do codesign --force --timestamp --options runtime -s "$IDENTITY" "$f"; done
+[ -e "$A/Contents/MacOS/MacShadeFilter" ] && codesign --force --timestamp --options runtime -s "$IDENTITY" "$A/Contents/MacOS/MacShadeFilter"
 codesign --force --timestamp --options runtime -s "$IDENTITY" "$A"
 codesign --verify --deep --strict --verbose=2 "$A"
 
