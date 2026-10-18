@@ -56,3 +56,6 @@ Verified with the unmodified Spider-Man: Edge of Time recomp (no injection), a t
 
 ## Screen filter: half resolution
 `captureHalfResolution` (Performance tab, off by default) passes `--scale 0.5` to the helper, which asks ScreenCaptureKit for half the pixel size; the window shows it enlarged. Measured only with a test window (1470x956 instead of 2940x1912 frames processed), no FPS numbers.
+
+## Screen filter: geometry and diagnostics (0.4.3)
+Report: on a Mac mini with an external monitor the picture was about 96 % of the screen, anchored bottom left, and clicks landed beside the buttons (full screen via the green button and via the game). Cause not found; not reproduced. Changes: the overlay window no longer lets AppKit move or shrink it (`constrainFrameRect:toScreen:`), the frame is cropped to `SCStreamUpdateFrameContentRect` when ScreenCaptureKit reports margins, and the log now has the game window, wanted and actual overlay frame, all screens with scale, the captured frame size and a 10 s summary (frames in/shown/dropped, ms per frame). `MACSHADE_FILTER_DEBUG=1` additionally logs the frame attachments once. Effects switched off with the effects hotkey did not slow the filter down in a test (58 fps, 3.4 ms per frame).

@@ -47,6 +47,7 @@ namespace
 @end
 @implementation MSFilterWindow
 - (BOOL)canBecomeKeyWindow { return YES; }
+- (NSRect)constrainFrameRect:(NSRect)frameRect toScreen:(NSScreen *)screen { return frameRect; }   // the overlay has to sit exactly on the game window, also over the menu bar
 - (BOOL)canBecomeMainWindow { return NO; }
 @end
 
@@ -91,6 +92,9 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	NSTimer *_tick, *_redraw;
 	NSDate *_lastFrame;
 	int _missing, _hideTicks, _restartTicks;
+	CGRect _contentRect;   // normalised: the window content inside the captured frame
+	// statistics, logged every few seconds
+	unsigned _statFrames, _statShown, _statDropped; double _statMs; NSDate *_statSince;
 	CGWindowID _pendingWID;
 	CGSize _pendingSize;
 	NSDate *_holdShownUntil;
@@ -193,7 +197,14 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	CGRect r; CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &r);
 	const CGFloat top = NSScreen.screens.firstObject.frame.size.height;
 	NSRect frame = NSMakeRect(r.origin.x, top - r.origin.y - r.size.height, r.size.width, r.size.height);
-	if (fabs(frame.origin.x - _window.frame.origin.x) > 0.5 || fabs(frame.origin.y - _window.frame.origin.y) > 0.5 || fabs(frame.size.width - _window.frame.size.width) > 0.5 || fabs(frame.size.height - _window.frame.size.height) > 0.5) [_window setFrame:frame display:YES];
+	if (fabs(frame.origin.x - _window.frame.origin.x) > 0.5 || fabs(frame.origin.y - _window.frame.origin.y) > 0.5 || fabs(frame.size.width - _window.frame.size.width) > 0.5 || fabs(frame.size.height - _window.frame.size.height) > 0.5) {
+		[_window setFrame:frame display:YES];
+		NSMutableString *screens = [NSMutableString string];
+		for (NSScreen *sc in NSScreen.screens) [screens appendFormat:@"[%.0f,%.0f %.0fx%.0f @%.0fx] ", sc.frame.origin.x, sc.frame.origin.y, sc.frame.size.width, sc.frame.size.height, sc.backingScaleFactor];
+		const NSRect got = _window.frame;
+		reshade::log::message(reshade::log::level::info, "Screen filter: game window (CG) %.0f,%.0f %.0fx%.0f -> overlay wanted %.0f,%.0f %.0fx%.0f, got %.0f,%.0f %.0fx%.0f; screens %s",
+			r.origin.x, r.origin.y, r.size.width, r.size.height, frame.origin.x, frame.origin.y, frame.size.width, frame.size.height, got.origin.x, got.origin.y, got.size.width, got.size.height, screens.UTF8String);
+	}
 
 	const BOOL gameFront = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == self.pid;
 	const BOOL weFront = NSApp.active;
@@ -264,6 +275,13 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	if (type != SCStreamOutputTypeScreen || !CMSampleBufferIsValid(sampleBuffer)) return;
 	NSArray *attachments = (__bridge NSArray *)CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, false);
 	if ([attachments.firstObject[SCStreamFrameInfoStatus] integerValue] != SCFrameStatusComplete) return;
+	static BOOL loggedGeometry = NO;
+	if (!loggedGeometry && std::getenv("MACSHADE_FILTER_DEBUG")) { loggedGeometry = YES; reshade::log::message(reshade::log::level::info, "Screen filter: frame attachments %s", [[attachments.firstObject description] UTF8String]); }
+	// where the window content lies inside the frame (points) and how many points the frame has: the crop keeps margins out of ReShade and the window
+	NSDictionary *a = attachments.firstObject; CGRect bounding = CGRectZero, content = CGRectZero;
+	CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)a[@"SCStreamUpdateFrameBoundingRect"], &bounding);
+	CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)a[@"SCStreamUpdateFrameContentRect"], &content);
+	_contentRect = (bounding.size.width > 0 && content.size.width > 0) ? CGRectMake(content.origin.x / bounding.size.width, content.origin.y / bounding.size.height, content.size.width / bounding.size.width, content.size.height / bounding.size.height) : CGRectMake(0, 0, 1, 1);
 	[_lock lock];
 	if (_last) CFRelease(_last);
 	_last = (CMSampleBufferRef)CFRetain(sampleBuffer);
@@ -284,8 +302,19 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	CVPixelBufferRef pixels = CMSampleBufferGetImageBuffer(sampleBuffer);
 	IOSurfaceRef source = pixels ? CVPixelBufferGetIOSurface(pixels) : nullptr;
 	if (source == nullptr) return;
-	const uint32_t w = (uint32_t)IOSurfaceGetWidth(source), h = (uint32_t)IOSurfaceGetHeight(source);
+	const uint32_t fw = (uint32_t)IOSurfaceGetWidth(source), fh = (uint32_t)IOSurfaceGetHeight(source);
+	if (fw < 16 || fh < 16) return;
+	// the part of the frame that is the window content (the whole frame unless ScreenCaptureKit reports margins)
+	uint32_t cx = 0, cy = 0, w = fw, h = fh;
+	const CGRect cr = _contentRect;
+	if (cr.size.width > 0.2 && cr.size.height > 0.2 && (cr.size.width < 0.99 || cr.size.height < 0.99 || cr.origin.x > 0.01 || cr.origin.y > 0.01)) {
+		cx = (uint32_t)MAX(0.0, round(cr.origin.x * fw)); cy = (uint32_t)MAX(0.0, round(cr.origin.y * fh));
+		w = (uint32_t)round(cr.size.width * fw); h = (uint32_t)round(cr.size.height * fh);
+		if (cx + w > fw) w = fw - cx;
+		if (cy + h > fh) h = fh - cy;
+	}
 	if (w < 16 || h < 16) return;
+	const NSDate *started = [NSDate date];
 	if (w != _w || h != _h) {
 		NSDictionary *props = @{ (id)kIOSurfaceWidth: @(w), (id)kIOSurfaceHeight: @(h), (id)kIOSurfaceBytesPerElement: @4, (id)kIOSurfaceBytesPerRow: @((w * 4 + 63) & ~63), (id)kIOSurfacePixelFormat: @((uint32_t)'BGRA') };
 		MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:w height:h mipmapped:NO];
@@ -304,30 +333,38 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 		NSWindow *window = _window; CAMetalLayer *layer = _detached;
 		dispatch_sync(dispatch_get_main_queue(), ^{ macshade_set_window_override((__bridge void *)layer, (__bridge void *)window); });
 		_w = w; _h = h;
-		reshade::log::message(reshade::log::level::info, "Screen filter: processing %ux%u frames.", w, h);
+		reshade::log::message(reshade::log::level::info, "Screen filter: processing %ux%u frames (captured frame %ux%u, content at %u,%u).", w, h, fw, fh, cx, cy);
 	}
-	MTLTextureDescriptor *sd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:w height:h mipmapped:NO];
+	MTLTextureDescriptor *sd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:fw height:fh mipmapped:NO];
 	sd.usage = MTLTextureUsageShaderRead; sd.storageMode = MTLStorageModeShared;
 	id<MTLTexture> src = [_device newTextureWithDescriptor:sd iosurface:source plane:0];
 	if (src == nil) return;
-	const int i = _next; _next = (_next + 1) % 3;
 	id<MTLCommandBuffer> cb = [_commands commandBuffer];
 	id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-	[blit copyFromTexture:src sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1) toTexture:_workTex destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
+	[blit copyFromTexture:src sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(cx, cy, 0) sourceSize:MTLSizeMake(w, h, 1) toTexture:_workTex destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
 	[blit endEncoding]; [cb commit]; [cb waitUntilCompleted];
 	if (!macshade_bridge_process(w, h, (__bridge void *)_detached, _work)) return;   // ReShade works on the private surface
 	macshade_frame_limit();
 	// a display surface the window server is not using (an unfinished frame must never be visible)
+	++_statFrames;
 	int slot = -1;
 	for (int k = 0; k < 5 && slot < 0; ++k) { const int c = (_next + k) % 5; if (!IOSurfaceIsInUse(_out[c])) slot = c; }
-	if (slot < 0) return;   // all busy: drop this frame
-	_next = (slot + 1) % 5;
-	id<MTLCommandBuffer> cb2 = [_commands commandBuffer];
-	id<MTLBlitCommandEncoder> blit2 = [cb2 blitCommandEncoder];
-	[blit2 copyFromTexture:_workTex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1) toTexture:_outTex[slot] destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
-	[blit2 endEncoding]; [cb2 commit]; [cb2 waitUntilCompleted];
-	IOSurfaceRef shown = _out[slot]; NSView *view = _view;
-	dispatch_async(dispatch_get_main_queue(), ^{ [CATransaction begin]; [CATransaction setDisableActions:YES]; view.layer.contents = (__bridge id)shown; [CATransaction commit]; });
+	if (slot >= 0) {
+		_next = (slot + 1) % 5;
+		id<MTLCommandBuffer> cb2 = [_commands commandBuffer];
+		id<MTLBlitCommandEncoder> blit2 = [cb2 blitCommandEncoder];
+		[blit2 copyFromTexture:_workTex sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1) toTexture:_outTex[slot] destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
+		[blit2 endEncoding]; [cb2 commit]; [cb2 waitUntilCompleted];
+		IOSurfaceRef shown = _out[slot]; NSView *view = _view;
+		dispatch_async(dispatch_get_main_queue(), ^{ [CATransaction begin]; [CATransaction setDisableActions:YES]; view.layer.contents = (__bridge id)shown; [CATransaction commit]; });
+		++_statShown;
+	} else ++_statDropped;   // all busy: this frame is dropped
+	_statMs += -[started timeIntervalSinceNow] * 1000.0;
+	if (_statSince == nil) _statSince = [NSDate date];
+	if (-[_statSince timeIntervalSinceNow] >= 10.0 && _statFrames > 0) {
+		reshade::log::message(reshade::log::level::info, "Screen filter: last %.0f s: %u frames in, %u shown, %u dropped, %.1f ms per frame (copy + ReShade + copy).", -[_statSince timeIntervalSinceNow], _statFrames, _statShown, _statDropped, _statMs / _statFrames);
+		_statFrames = _statShown = _statDropped = 0; _statMs = 0; _statSince = [NSDate date];
+	}
 }
 @end
 
