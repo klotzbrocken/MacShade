@@ -33,7 +33,7 @@ struct ContentView: View {
                 if showHub {
                     GameHubView(addGame: pickApp)
                 } else if showSettings {
-                    ScrollView { SettingsView(embedded: true, showPackages: { showPackages = true }) }
+                    ScrollView { SettingsView(embedded: true, showPackages: { showPackages = true }, findGames: { showDiscover = true }) }
                 } else if store.games.isEmpty {
                     WelcomeView(pick: pickApp, find: { showDiscover = true })
                 } else if let i = store.games.firstIndex(where: { $0.id == selection }) {
@@ -110,11 +110,10 @@ struct ContentView: View {
                 }
             }
             VStack(spacing: 8) {
-                Button { pickApp() } label: { Label("Add game", systemImage: "plus").frame(maxWidth: .infinity) }.buttonStyle(SoftButton())
                 Button { showHub = true; showSettings = false } label: { Label("Game Hub", systemImage: "square.grid.2x2").frame(maxWidth: .infinity) }.buttonStyle(SoftButton(tint: showHub ? Theme.accent : Theme.text))
-                HStack(spacing: 8) {
-                    Button { showDiscover = true } label: { Label("Find games", systemImage: "magnifyingglass").frame(maxWidth: .infinity) }.buttonStyle(SoftButton())
-                    Button { showSettings.toggle(); showHub = false } label: { Image(systemName: "gearshape") }.buttonStyle(SoftButton(tint: showSettings ? Theme.accent : Theme.text)).help(L("Settings"))
+                HStack(spacing: 8) {   // icons only: they save space and have tooltips
+                    Button { pickApp() } label: { Image(systemName: "plus").frame(maxWidth: .infinity) }.buttonStyle(SoftButton()).help(L("Add game"))
+                    Button { showSettings.toggle(); showHub = false } label: { Image(systemName: "gearshape").frame(maxWidth: .infinity) }.buttonStyle(SoftButton(tint: showSettings ? Theme.accent : Theme.text)).help(L("Settings"))
                 }
             }
         }

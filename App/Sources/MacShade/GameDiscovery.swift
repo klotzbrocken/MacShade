@@ -6,7 +6,7 @@ struct GameCandidate: Identifiable, Hashable {
     var name: String
     var path: String
     var info: GameInfo
-    var supported: Bool { info.archs.contains("arm64") && info.api != .staticVulkan && PortAdvice.incompatible(name) == nil }
+    var supported: Bool { info.archs.contains("arm64") && info.api != .staticVulkan }
     static func == (a: GameCandidate, b: GameCandidate) -> Bool { a.path == b.path }
     func hash(into h: inout Hasher) { h.combine(path) }
 }

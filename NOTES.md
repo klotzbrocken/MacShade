@@ -53,3 +53,6 @@ Verified with the unmodified Spider-Man: Edge of Time recomp (no injection), a t
 
 ## Minimum macOS of the injected library
 `libmacshade.dylib` is loaded into games and must load on every macOS the app supports (13 and later). It used to be built with the host's SDK and deployment target (macOS 27), so releases 0.1-0.4 failed to load below macOS 27 (status 1, "built for macOS 27 which is newer than running OS"). `mac/CMakeLists.txt` now sets `CMAKE_OSX_DEPLOYMENT_TARGET 13.0` and makes unguarded newer APIs an error for the Objective-C++ files. Floating-point `std::from_chars`/`to_chars` (macOS 26 / 13.3) were replaced by `strtof`/`snprintf` in ReShade's effect lexer and GLSL/HLSL codegen. Check a build with `vtool -show-build <dylib>` (minos 13.0). Not tested on a real older macOS.
+
+## Screen filter: half resolution
+`captureHalfResolution` (Performance tab, off by default) passes `--scale 0.5` to the helper, which asks ScreenCaptureKit for half the pixel size; the window shows it enlarged. Measured only with a test window (1470x956 instead of 2940x1912 frames processed), no FPS numbers.

@@ -74,13 +74,15 @@ struct GameDetail: View {
             HStack(spacing: 4) {
                 ForEach(GameTab.allCases, id: \.self) { t in
                     Button { tab = t } label: {
-                        Text(LocalizedStringKey(t.rawValue)).font(.system(size: 14, weight: .semibold))
+                        Text(LocalizedStringKey(t.rawValue)).font(.system(size: 14, weight: .semibold)).lineLimit(1).fixedSize()
                             .foregroundStyle(tab == t ? Theme.text : Theme.muted)
-                            .padding(.horizontal, 16).padding(.vertical, 10)
+                            .padding(.horizontal, 12).padding(.vertical, 10)
                             .background(tab == t ? Theme.raised : .clear, in: RoundedRectangle(cornerRadius: 10))
                     }.buttonStyle(.plain)
                 }
                 Spacer()
+                Rectangle().fill(Theme.line).frame(width: 1, height: 26).padding(.horizontal, 8)   // set apart from the tabs
+                startButton
             }.padding(.horizontal, 36).padding(.top, 14)
             ScrollView {
                 Group {
@@ -120,19 +122,13 @@ struct GameDetail: View {
                     if copyUsage > 0 && !game.captureMode { Pill(text: L("Game copy ready · %@", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file)), color: Theme.good) }
                     statusView
                 }
-                if let why = PortAdvice.incompatible(game.name) { Text(why).font(.caption).foregroundStyle(Theme.warn) }
+                if !game.captureMode, let why = PortAdvice.incompatible(game.name) {
+                    Text(why).font(.caption).foregroundStyle(Theme.warn)
+                    Button("Use the screen filter mode") { setCapture(true) }.buttonStyle(SoftButton(tint: Theme.accent))
+                }
                 if let info, !info.archs.contains("arm64"), !game.captureMode { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn) }
             }
             Spacer(minLength: 12)
-            VStack(alignment: .trailing, spacing: 8) {
-                if phase == .running {
-                    Button { launcher.stop(game) } label: { Label("Quit game", systemImage: "stop.fill") }.buttonStyle(BigButton(stop: true))
-                } else {
-                    Button { launcher.start(game) } label: { Label("Start with ReShade", systemImage: "play.fill").lineLimit(1).fixedSize() }
-                        .buttonStyle(BigButton()).disabled(busy || (info?.api == .staticVulkan && !game.captureMode)).keyboardShortcut(.return, modifiers: .command)
-                }
-                Text(L("In the game: %@ opens ReShade", game.overlayKey.label)).font(.system(size: 12)).foregroundStyle(Theme.muted)
-            }
         }.padding(.horizontal, 36).padding(.top, 28).padding(.bottom, 22)
         .frame(minHeight: banner == nil ? 0 : 210)
         .background { bannerBackground }
@@ -144,6 +140,16 @@ struct GameDetail: View {
         }
         .onAppear { banner = NSImage(contentsOf: Paths.banner(for: game)); captureAllowed = CGPreflightScreenCaptureAccess() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in captureAllowed = CGPreflightScreenCaptureAccess() }
+    }
+
+    /// Start / quit button in the tab row.
+    @ViewBuilder private var startButton: some View {
+        if phase == .running {
+            Button { launcher.stop(game) } label: { Label("Quit game", systemImage: "stop.fill").lineLimit(1).fixedSize() }.buttonStyle(BigButton(stop: true, compact: true))
+        } else {
+            Button { launcher.start(game) } label: { Label("Start with ReShade", systemImage: "play.fill").lineLimit(1).fixedSize() }
+                .buttonStyle(BigButton(compact: true)).disabled(busy || (info?.api == .staticVulkan && !game.captureMode)).keyboardShortcut(.return, modifiers: .command)
+        }
     }
 
     @ViewBuilder private var bannerBackground: some View {
@@ -165,6 +171,13 @@ struct GameDetail: View {
         } label: { Image(systemName: "photo") }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30, height: 30)
             .background(Theme.card.opacity(0.85), in: RoundedRectangle(cornerRadius: 8)).help(L("Banner"))
+    }
+
+    /// Turns the screen filter mode on or off; switching it on asks for the Screen Recording permission right away, not at the first start.
+    private func setCapture(_ on: Bool) {
+        game.captureMode = on
+        if on && !CGPreflightScreenCaptureAccess() { _ = CGRequestScreenCaptureAccess() }
+        captureAllowed = CGPreflightScreenCaptureAccess()
     }
 
     private func chooseBanner() {
@@ -205,11 +218,9 @@ struct GameDetail: View {
                     }
                 }
             }
-            HStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
                 SectionTitle("Choose your look", "The chosen look is loaded at the next start. In the game you can change it live.")
-                Spacer()
-                Button("Import preset …") { importPreset() }.buttonStyle(SoftButton())
-                Button("Show folder") { Launcher.prepareInstance(game); NSWorkspace.shared.open(instance) }.buttonStyle(SoftButton())
+                Text(L("In the game: %@ opens ReShade", game.overlayKey.label)).font(.system(size: 15, weight: .bold))
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 16)], spacing: 16) {
                 ForEach(presets, id: \.self) { name in
@@ -238,6 +249,8 @@ struct GameDetail: View {
             }
             if let presetMessage { Text(presetMessage).font(.caption).foregroundStyle(Theme.good) }
             Flow {
+                Button("Import preset …") { importPreset() }.buttonStyle(SoftButton())
+                Button("Show folder") { Launcher.prepareInstance(game); NSWorkspace.shared.open(instance) }.buttonStyle(SoftButton())
                 Button("Restore default preset") { Presets.restoreDefault(for: game); presetMessage = L("Default preset restored and selected."); refreshPresets() }.buttonStyle(SoftButton())
                 Button("Delete selected preset") { Presets.delete(activePreset, for: game); presetMessage = L("Preset deleted."); refreshPresets() }
                     .buttonStyle(SoftButton(tint: Theme.bad)).disabled(activePreset.isEmpty || activePreset == Presets.defaultName)
@@ -322,6 +335,14 @@ struct GameDetail: View {
                 }.padding(4).background(Theme.bg, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
             }
             Card {
+                Toggle(isOn: $game.captureHalfResolution) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Capture at half resolution (screen filter mode)").font(.system(size: 15, weight: .bold))
+                        Text("Only used in the screen filter mode: the game window is captured at half the pixel size and enlarged again. ReShade has fewer pixels to process, so the frame rate is higher, but the picture is softer. Takes effect at the next start.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    }
+                }.toggleStyle(.switch).tint(Theme.accent)
+            }
+            Card {
                 Toggle(isOn: $game.pipeline) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Smooth frame rate for OpenGL and Metal games (about 2 frames more input delay)").font(.system(size: 15, weight: .bold))
@@ -366,11 +387,7 @@ struct GameDetail: View {
             Card {
                 Text("Screen filter mode (experimental)").font(.system(size: 15, weight: .bold))
                 Text("The game starts unchanged: no copy, nothing injected. MacShade captures the game window and shows it with ReShade on top. This works for games MacShade cannot hook (Metal, Mac App Store, copy protection, Intel-only games). Costs one or two frames of delay, no depth effects. Needs the Screen Recording permission; works best in a window or borderless.").font(.system(size: 13)).foregroundStyle(Theme.muted)
-                Toggle("Use the screen filter for this game", isOn: Binding(get: { game.captureMode }, set: { on in
-                    game.captureMode = on
-                    if on && !CGPreflightScreenCaptureAccess() { _ = CGRequestScreenCaptureAccess() }   // ask for the Screen Recording permission now, not at the first start
-                    captureAllowed = CGPreflightScreenCaptureAccess()
-                })).toggleStyle(.switch).tint(Theme.accent).disabled(busy)
+                Toggle("Use the screen filter for this game", isOn: Binding(get: { game.captureMode }, set: { setCapture($0) })).toggleStyle(.switch).tint(Theme.accent).disabled(busy)
                 if game.captureMode {
                     HStack(spacing: 10) {
                         Pill(text: captureAllowed ? L("Screen Recording: allowed") : L("Screen Recording: not allowed yet"), color: captureAllowed ? Theme.good : Theme.warn)

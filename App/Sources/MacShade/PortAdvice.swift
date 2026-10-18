@@ -29,7 +29,7 @@ enum PortAdvice {
     /// Games that are known not to work: they refuse to run as a copy and relaunch themselves through their launcher.
     static func incompatible(_ name: String) -> String? {
         let n = name.lowercased()
-        if n.contains("sims 4") { return L("Runs only through its own launcher (EA app) and refuses a modified copy, so MacShade cannot load ReShade into it.") }
+        if n.contains("sims 4") { return L("Runs only through its own launcher (EA app) and refuses a modified copy, so the normal mode cannot load ReShade. The screen filter mode works with it.") }
         return nil
     }
 }

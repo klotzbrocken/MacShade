@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     var embedded = true
     var showPackages: () -> Void = {}
+    var findGames: (() -> Void)? = nil   // only the embedded settings page can open the search sheet
     @State private var keys = GlobalKeys.load()
     @EnvironmentObject var updates: UpdateChecker
     @State private var keysApplied = false
@@ -67,6 +68,14 @@ struct SettingsView: View {
                 }
             }
             .onChange(of: keys) { GlobalKeys.save($0) }
+
+            if let findGames {
+                Card {
+                    Text("Find games").font(.system(size: 15, weight: .bold))
+                    Text("Search your Mac for games MacShade can use and add them to the list.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    Button { findGames() } label: { Label("Find games …", systemImage: "magnifyingglass") }.buttonStyle(SoftButton(tint: Theme.accent))
+                }
+            }
 
             Card {
                 Text("Updates").font(.system(size: 15, weight: .bold))

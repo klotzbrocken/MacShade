@@ -59,12 +59,13 @@ struct SoftButton: ButtonStyle {
 
 struct BigButton: ButtonStyle {
     var stop = false
+    var compact = false
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.system(size: 17, weight: .heavy))
+        configuration.label.font(.system(size: compact ? 14 : 17, weight: .heavy))
             .foregroundStyle(stop ? Color(hex: 0xFFB4B4) : Theme.onAccent)
-            .padding(.horizontal, 30).padding(.vertical, 15)
-            .background(stop ? Color(hex: 0x2A1518) : Theme.accent.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(stop ? Theme.bad : .clear, lineWidth: 1.5))
+            .padding(.horizontal, compact ? 18 : 30).padding(.vertical, compact ? 9 : 15)
+            .background(stop ? Color(hex: 0x2A1518) : Theme.accent.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: compact ? 10 : 14))
+            .overlay(RoundedRectangle(cornerRadius: compact ? 10 : 14).stroke(stop ? Theme.bad : .clear, lineWidth: 1.5))
     }
 }
 

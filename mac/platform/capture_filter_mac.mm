@@ -53,6 +53,7 @@ namespace
 @interface MSFilterController : NSObject <SCStreamOutput, SCStreamDelegate>
 @property pid_t pid;
 @property HotKey overlayKey, effectsKey;
+@property double captureScale;
 - (void)start;
 - (void)hotkey:(UInt32)which;
 @end
@@ -209,7 +210,8 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	NSScreen *screen = NSScreen.mainScreen; CGFloat bestOverlap = -1;
 	for (NSScreen *sc in NSScreen.screens) { NSRect i = NSIntersectionRect(sc.frame, frame); const CGFloat o = i.size.width * i.size.height; if (o > bestOverlap) { bestOverlap = o; screen = sc; } }
 	const CGWindowID wid = [info[(id)kCGWindowNumber] unsignedIntValue];
-	const CGSize size = CGSizeMake(round(r.size.width * screen.backingScaleFactor), round(r.size.height * screen.backingScaleFactor));
+	const CGFloat factor = screen.backingScaleFactor * (self.captureScale > 0 ? self.captureScale : 1.0);   // half resolution capture: fewer pixels for ReShade
+	const CGSize size = CGSizeMake(round(r.size.width * factor), round(r.size.height * factor));
 	const BOOL differs = wid != _windowID || fabs(size.width - _captureSize.width) > 2 || fabs(size.height - _captureSize.height) > 2;
 	if (!differs) { _restartTicks = 0; return; }
 	if (wid == _pendingWID && fabs(size.width - _pendingSize.width) <= 2 && fabs(size.height - _pendingSize.height) <= 2) ++_restartTicks; else { _pendingWID = wid; _pendingSize = size; _restartTicks = 1; }
@@ -333,11 +335,12 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 extern "C" __attribute__((visibility("default"))) int macshade_filter_main(int argc, char **argv)
 {
 	@autoreleasepool {
-		int pid = 0; const char *overlay = nullptr, *effects = nullptr;
+		int pid = 0; double scale = 1.0; const char *overlay = nullptr, *effects = nullptr;
 		for (int i = 1; i + 1 < argc; ++i) {
 			if (!std::strcmp(argv[i], "--pid")) pid = std::atoi(argv[i + 1]);
 			else if (!std::strcmp(argv[i], "--overlay")) overlay = argv[i + 1];
 			else if (!std::strcmp(argv[i], "--effects")) effects = argv[i + 1];
+			else if (!std::strcmp(argv[i], "--scale")) scale = std::atof(argv[i + 1]);
 		}
 		if (pid <= 0) { std::fprintf(stderr, "usage: MacShadeFilter --pid <game pid>\n"); return 2; }
 		if (!CGPreflightScreenCaptureAccess()) {
@@ -348,7 +351,7 @@ extern "C" __attribute__((visibility("default"))) int macshade_filter_main(int a
 		[NSApplication sharedApplication];
 		[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 		s_controller = [MSFilterController new];
-		s_controller.pid = pid; s_controller.overlayKey = parse_hotkey(overlay); s_controller.effectsKey = parse_hotkey(effects);
+		s_controller.captureScale = scale; s_controller.pid = pid; s_controller.overlayKey = parse_hotkey(overlay); s_controller.effectsKey = parse_hotkey(effects);
 		[s_controller start];
 		[NSApp run];
 	}
