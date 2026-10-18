@@ -3,6 +3,15 @@
     <channel>
         <title>MacShade</title>
         <item>
+            <title>0.4.2</title>
+            <pubDate>Sun, 18 Oct 2026 04:51:31 +0200</pubDate>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>0.4.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/klotzbrocken/MacShade/releases/download/v0.4.2/MacShade-0.4.2.dmg" length="44554609" type="application/octet-stream" sparkle:edSignature="ya4bh5zokczDaeg9IyH8CdSS/uOeTsIqIjZZ8pUiv2jiK+bTsRxQyHAF7jZpnMJK5Rh4qCup31oIDRUTlItwCQ=="/>
+        </item>
+        <item>
             <title>0.4.1</title>
             <pubDate>Sat, 17 Oct 2026 20:55:27 +0200</pubDate>
             <sparkle:version>5</sparkle:version>
