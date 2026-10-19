@@ -103,6 +103,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	int _missing, _hideTicks, _restartTicks;
 	CGRect _contentRect;   // normalised: the window content inside the captured frame
 	NSString *_lastGeometry; int _geometryLogs;
+	CGSize _windowPoints;   // the window as the window list reports it (points); with _sourceSize it gives the part of the captured picture that lies above the screen
 	CGSize _sourceSize;   // the window's real size in points as ScreenCaptureKit sees it (content size / content scale); can be larger than the window list says
 	BOOL _extraLogged;
 	CGFloat _pixelScale;   // pixels per point as ScreenCaptureKit reports it for the filter (macOS 14 and later), 0 = not known
@@ -247,6 +248,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 		return;
 	}
 	CGRect r; CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &r);
+	if (const char *fake = std::getenv("MACSHADE_FILTER_FAKE_TITLEBAR")) { const double d = std::atof(fake); r.origin.y += d; r.size.height -= d; }   // test aid: the window list reports only the lower part, as if a title bar lay above the screen
 	const CGFloat top = NSScreen.screens.firstObject.frame.size.height;
 	// ScreenCaptureKit can know the window as larger than the window list says (a title bar above the top of the screen): the frame then holds the whole window, shrunk to fit.
 	// The overlay has to be as large as that window, with the extra part above and beyond the screen, so that the picture and the real window coincide.
@@ -254,9 +256,10 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	CGFloat extraW = 0, extraH = 0;
 	if (source.width > r.size.width + 1.5 && source.width < r.size.width + 400) extraW = source.width - r.size.width;
 	if (source.height > r.size.height + 1.5 && source.height < r.size.height + 400) extraH = source.height - r.size.height;
-	if ((extraW > 0 || extraH > 0) && !_extraLogged) { _extraLogged = YES; reshade::log::message(reshade::log::level::info, "Screen filter: the window list says %.1fx%.1f pt, ScreenCaptureKit sees the window as %.1fx%.1f pt: the overlay is extended by %.1f pt (width) and %.1f pt (height, above the window).", r.size.width, r.size.height, source.width, source.height, extraW, extraH); }
-	r.size.width += extraW; r.size.height += extraH; r.origin.y -= extraH;   // the extra height is above the visible part (the title bar)
-	NSRect frame = NSMakeRect(r.origin.x, top - r.origin.y - r.size.height, r.size.width, r.size.height);
+	if ((extraW > 0 || extraH > 0) && !_extraLogged) { _extraLogged = YES; reshade::log::message(reshade::log::level::info, "Screen filter: the window list says %.1fx%.1f pt, ScreenCaptureKit sees the window as %.1fx%.1f pt: the capture is taken at that size, the extra %.1f pt (width) and %.1f pt (height, above the window) are cut off before ReShade, the overlay sits on the visible window.", r.size.width, r.size.height, source.width, source.height, extraW, extraH); }
+	[_lock lock]; _windowPoints = r.size; [_lock unlock];
+	NSRect frame = NSMakeRect(r.origin.x, top - r.origin.y - r.size.height, r.size.width, r.size.height);   // the overlay covers the visible window; ReShade's menu and counter sit inside it
+	const CGSize capturePoints = CGSizeMake(r.size.width + extraW, r.size.height + extraH);   // what ScreenCaptureKit has to capture to show the whole window without shrinking it
 	if (fabs(frame.origin.x - _window.frame.origin.x) > 0.5 || fabs(frame.origin.y - _window.frame.origin.y) > 0.5 || fabs(frame.size.width - _window.frame.size.width) > 0.5 || fabs(frame.size.height - _window.frame.size.height) > 0.5) {
 		[_window setFrame:frame display:YES];
 		NSMutableString *screens = [NSMutableString string];
@@ -288,12 +291,12 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	for (NSScreen *sc in NSScreen.screens) { NSRect i = NSIntersectionRect(sc.frame, frame); const CGFloat o = i.size.width * i.size.height; if (o > bestOverlap) { bestOverlap = o; screen = sc; } }
 	const CGWindowID wid = [info[(id)kCGWindowNumber] unsignedIntValue];
 	const CGFloat factor = (_pixelScale > 0 ? _pixelScale : screen.backingScaleFactor) * (self.captureScale > 0 ? self.captureScale : 1.0);   // the same rule as in startStream
-	CGSize size = CGSizeMake(round(r.size.width * factor), round(r.size.height * factor));
+	CGSize size = CGSizeMake(round(capturePoints.width * factor), round(capturePoints.height * factor));
 	if (const char *forced = std::getenv("MACSHADE_FILTER_FORCE_SIZE")) { int fw = 0, fh = 0; if (std::sscanf(forced, "%dx%d", &fw, &fh) == 2 && fw > 0 && fh > 0) size = CGSizeMake(fw, fh); }
 	const BOOL differs = wid != _windowID || fabs(size.width - _captureSize.width) > 2 || fabs(size.height - _captureSize.height) > 2;
 	if (!differs) { _restartTicks = 0; return; }
 	if (wid == _pendingWID && fabs(size.width - _pendingSize.width) <= 2 && fabs(size.height - _pendingSize.height) <= 2) ++_restartTicks; else { _pendingWID = wid; _pendingSize = size; _restartTicks = 1; }
-	if (!_starting && (_stream == nil || _restartTicks >= 2)) { _restartTicks = 0; [self startStream:wid points:r.size backing:screen.backingScaleFactor]; }
+	if (!_starting && (_stream == nil || _restartTicks >= 2)) { _restartTicks = 0; [self startStream:wid points:capturePoints backing:screen.backingScaleFactor]; }
 }
 
 - (void)startStream:(CGWindowID)wid points:(CGSize)points backing:(CGFloat)backing
@@ -369,6 +372,16 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	}
 	CGSize source = CGSizeZero;
 	if (content.size.width > 0 && contentScale > 0.2 && contentScale <= 1.01) source = CGSizeMake(content.size.width / contentScale, content.size.height / contentScale);
+	// the captured window can be larger than the part the window list reports (a title bar above the screen edge): ReShade only gets the visible part, so its menu and counter are not cut off
+	[_lock lock]; const CGSize window = _windowPoints; [_lock unlock];
+	const double cs = (contentScale > 0.2 && contentScale <= 1.01) ? contentScale : 1.0;
+	if (source.width > 0 && window.width > 0 && surfW > 0 && surfH > 0) {
+		const double extraW = (source.width > window.width + 1.5 && source.width < window.width + 400) ? source.width - window.width : 0;
+		const double extraH = (source.height > window.height + 1.5 && source.height < window.height + 400) ? source.height - window.height : 0;
+		fraction.origin.y += extraH * cs * ppp / surfH; fraction.size.height -= extraH * cs * ppp / surfH;   // the extra height is above the window
+		fraction.size.width -= extraW * cs * ppp / surfW;                                                       // extra width: at the right (unverified)
+		if (fraction.size.width < 0.2 || fraction.size.height < 0.2) fraction = CGRectMake(0, 0, 1, 1);
+	}
 	[_lock lock]; _contentRect = fraction; _sourceSize = source; [_lock unlock];
 	{   // log every change of the geometry (not of the position, a window sliding in would use up the log): what ScreenCaptureKit reports
 		id screenRect = nil;
