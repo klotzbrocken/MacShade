@@ -217,11 +217,12 @@ namespace
 
 // Overlay / effect toggles requested from other threads (the screen filter's hotkeys); applied on the thread that renders the frame.
 #include <atomic>
-static std::atomic<int> s_pending_overlay{ -1 }, s_pending_effects{ 0 };
+static std::atomic<int> s_pending_overlay{ -1 }, s_pending_effects{ 0 }, s_pending_screenshot{ 0 };
 static std::atomic<bool> s_overlay_open{ false };
 void macshade_bridge_set_overlay(bool open) { s_pending_overlay = open ? 1 : 0; }
 bool macshade_bridge_overlay_open() { return s_overlay_open; }
 void macshade_bridge_toggle_effects() { s_pending_effects = 1; }
+void macshade_bridge_request_screenshot() { s_pending_screenshot = 1; }
 static reshade::runtime *effect_runtime_of(reshade::vulkan::object_data<VK_OBJECT_TYPE_SWAPCHAIN_KHR> *swapchain) { return static_cast<reshade::api::swapchain *>(swapchain)->get_private_data<reshade::runtime>(); }
 static void apply_pending(reshade::vulkan::object_data<VK_OBJECT_TYPE_SWAPCHAIN_KHR> *swapchain)
 {
@@ -229,6 +230,7 @@ static void apply_pending(reshade::vulkan::object_data<VK_OBJECT_TYPE_SWAPCHAIN_
 	if (rt == nullptr) return;
 	if (const int o = s_pending_overlay.exchange(-1); o >= 0) { const bool ok = rt->open_overlay(o != 0, reshade::api::input_source::keyboard); reshade::log::message(reshade::log::level::info, "Bridge: overlay %s (%s).", o ? "open" : "closed", ok ? "ok" : "refused"); }
 	if (s_pending_effects.exchange(0) != 0) rt->set_effects_state(!rt->get_effects_state());
+	if (s_pending_screenshot.exchange(0) != 0) rt->request_screenshot();
 	s_overlay_open = rt->overlay_visible();
 }
 
@@ -453,7 +455,9 @@ void macshade_bridge_pipeline_submit(int slot, bool with_depth)
 	record_copy(b.cb_out[slot], b.work, b.frames[slot], false, b.width, b.height);
 	VkSubmitInfo in = { VK_STRUCTURE_TYPE_SUBMIT_INFO }; in.commandBufferCount = 1; in.pCommandBuffers = &b.cb_in[slot];
 	submit(b.queue, 1, &in, VK_NULL_HANDLE);
+	apply_pending(b.swapchain_impl);
 	reshade::present_effect_runtime(b.swapchain_impl);
+	if (reshade::runtime *const rt = effect_runtime_of(b.swapchain_impl)) s_overlay_open = rt->overlay_visible();
 	if (const auto queue_impl = b.device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUEUE>(b.queue)) queue_impl->flush_immediate_command_list();
 	VkSubmitInfo out = { VK_STRUCTURE_TYPE_SUBMIT_INFO }; out.commandBufferCount = 1; out.pCommandBuffers = &b.cb_out[slot];
 	submit(b.queue, 1, &out, b.fence[slot]);

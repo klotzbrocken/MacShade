@@ -328,12 +328,13 @@ final class Launcher: ObservableObject {
         }
         guard let out = try? FileHandle(forWritingTo: logURL) else { phase[id] = .failed(L("Log file is not writable.")); return }
         let p = Process(); p.executableURL = helper
-        p.arguments = ["--pid", String(pid), "--overlay", mac(game.overlayKey), "--effects", mac(game.effectsKey)] + (game.captureHalfResolution ? ["--scale", "0.5"] : [])
+        p.arguments = ["--pid", String(pid), "--overlay", mac(game.overlayKey), "--effects", mac(game.effectsKey), "--screenshot", mac(game.screenshotKey)] + (game.captureHalfResolution ? ["--scale", "0.5"] : [])
         var env = ProcessInfo.processInfo.environment
         env["MACSHADE_LIB"] = Paths.dylib.path
         env["MACSHADE_MOLTENVK"] = Paths.dylib.deletingLastPathComponent().appendingPathComponent("libMoltenVK.dylib").path
         env["MACSHADE_BASE"] = instance.path
         if game.fpsLimit > 0 { env["MACSHADE_FPS_LIMIT"] = String(game.fpsLimit) }
+        if game.pipeline { env["MACSHADE_PIPELINE"] = "1" }   // several frames in flight (about two frames more delay)
         p.environment = env; p.standardOutput = out; p.standardError = out
         p.terminationHandler = { proc in
             Task { @MainActor in

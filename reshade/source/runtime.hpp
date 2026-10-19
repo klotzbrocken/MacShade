@@ -170,7 +170,8 @@ namespace reshade
 		void reorder_techniques(size_t count, const api::effect_technique *techniques) final;
 
 		bool open_overlay(bool open, api::input_source source) final;
-		bool overlay_visible() const { return _show_overlay; }   // macshade: the screen filter needs to know whether ReShade's overlay is open
+		bool overlay_visible() const { return _show_overlay; }
+		void request_screenshot() { _screenshot_count++; _should_save_screenshot = true; }   // macshade: the screen filter's screenshot hotkey (same as ReShade's own key)   // macshade: the screen filter needs to know whether ReShade's overlay is open
 
 		void set_color_space(api::color_space color_space) final;
 
