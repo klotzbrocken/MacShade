@@ -322,6 +322,7 @@ struct GameDetail: View {
             Card {
                 Text("Frame rate limit").font(.system(size: 15, weight: .bold))
                 Text("Holds the game to this frame rate (also saves power and heat). Takes effect at the next start.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                if game.captureMode { Text("In screen filter mode this limits the filtered picture only; the game itself keeps running at its own rate.").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent) }
                 HStack(spacing: 4) {
                     ForEach([0, 30, 60, 120, 144], id: \.self) { v in
                         Button { game.fpsLimit = v } label: {

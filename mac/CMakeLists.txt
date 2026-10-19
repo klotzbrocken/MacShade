@@ -69,7 +69,7 @@ foreach(t rs_objs macshade)
     ${CMAKE_CURRENT_SOURCE_DIR}/compat ${CMAKE_CURRENT_SOURCE_DIR}/platform ${RS}/res ${RS}/source ${RS}/source/vulkan ${RS}/include ${RS}/deps ${RS}/deps/utfcpp/source ${RS}/deps/vma/include ${RS}/deps/spirv/include/spirv/unified1 ${RS}/examples ${VKH})
   target_compile_definitions(${t} PRIVATE RESHADE_GUI=1 RESHADE_ADDON=2 RESHADE_LOCALIZATION=1 RESHADE_API_LIBRARY_EXPORT vkGetInstanceProcAddr=rs_vkGetInstanceProcAddr vkGetDeviceProcAddr=rs_vkGetDeviceProcAddr _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS NDEBUG
     VMA_STATIC_VULKAN_FUNCTIONS=0 VMA_DYNAMIC_VULKAN_FUNCTIONS=0 VMA_STATS_STRING_ENABLED=0 UTF_CPP_CPLUSPLUS=201703L)
-  target_compile_options(${t} PRIVATE -fdeclspec -w "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/compat/mac_compat.h")
+  target_compile_options(${t} PRIVATE -fdeclspec -Wno-everything "SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/compat/mac_compat.h")
 endforeach()
 set_source_files_properties(platform/gl_bridge_mac.mm platform/metal_bridge_mac.mm platform/capture_filter_mac.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc -Werror=unguarded-availability-new")
 set_source_files_properties(platform/dll_resources_mac.mm platform/input_mac.mm platform/platform_utils_mac.mm PROPERTIES COMPILE_FLAGS "-Werror=unguarded-availability-new")   # an API newer than the deployment target is a build error, not a crash on older macOS

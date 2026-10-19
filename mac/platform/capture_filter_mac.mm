@@ -308,7 +308,9 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 			config.width = (size_t)size.width; config.height = (size_t)size.height;
 			config.pixelFormat = kCVPixelFormatType_32BGRA;
 			config.showsCursor = NO; config.queueDepth = 4;
-			config.minimumFrameInterval = CMTimeMake(1, 120);
+			// the frame rate limit of the game page limits the captured (and so the filtered) picture; the game itself keeps running at its own rate
+			const double limit = std::getenv("MACSHADE_FPS_LIMIT") ? std::atof(std::getenv("MACSHADE_FPS_LIMIT")) : 0.0;
+			config.minimumFrameInterval = limit >= 1.0 ? CMTimeMakeWithSeconds(1.0 / limit, 600) : CMTimeMake(1, 120);
 			SCStream *stream = [[SCStream alloc] initWithFilter:filter configuration:config delegate:self];
 			NSError *addError = nil;
 			[stream addStreamOutput:self type:SCStreamOutputTypeScreen sampleHandlerQueue:self->_queue error:&addError];
@@ -341,15 +343,18 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	if ([attachments.firstObject[SCStreamFrameInfoStatus] integerValue] != SCFrameStatusComplete) return;
 	// where the window content lies inside the frame (points) and how many points the frame has: the crop keeps margins out of ReShade and the window
 	NSDictionary *a = attachments.firstObject; CGRect bounding = CGRectZero, content = CGRectZero;
-	CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)a[SCStreamFrameInfoBoundingRect], &bounding);
+	if (@available(macOS 14.0, *)) CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)a[SCStreamFrameInfoBoundingRect], &bounding);   // the key does not exist before macOS 14: no crop there
 	CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)a[SCStreamFrameInfoContentRect], &content);
-	_contentRect = (bounding.size.width > 0 && content.size.width > 0) ? CGRectMake(content.origin.x / bounding.size.width, content.origin.y / bounding.size.height, content.size.width / bounding.size.width, content.size.height / bounding.size.height) : CGRectMake(0, 0, 1, 1);
+	// both rects are in surface coordinates: the content's place relative to the bounding box, as a fraction of it
+	_contentRect = (bounding.size.width > 0 && content.size.width > 0) ? CGRectMake((content.origin.x - bounding.origin.x) / bounding.size.width, (content.origin.y - bounding.origin.y) / bounding.size.height, content.size.width / bounding.size.width, content.size.height / bounding.size.height) : CGRectMake(0, 0, 1, 1);
 	{   // log every change of the geometry (not every frame): what ScreenCaptureKit reports, so a report shows where picture and window differ
 		IOSurfaceRef surface = CVPixelBufferGetIOSurface(CMSampleBufferGetImageBuffer(sampleBuffer));
+		id screenRect = nil;
+		if (@available(macOS 13.1, *)) screenRect = a[SCStreamFrameInfoScreenRect];
 		NSString *geometry = [NSString stringWithFormat:@"surface %zux%zu, boundingRect %.1f,%.1f %.1fx%.1f, contentRect %.1f,%.1f %.1fx%.1f, contentScale %@, scaleFactor %@, screenRect %@",
 			surface ? IOSurfaceGetWidth(surface) : 0, surface ? IOSurfaceGetHeight(surface) : 0,
 			bounding.origin.x, bounding.origin.y, bounding.size.width, bounding.size.height, content.origin.x, content.origin.y, content.size.width, content.size.height,
-			a[SCStreamFrameInfoContentScale], a[SCStreamFrameInfoScaleFactor], a[SCStreamFrameInfoScreenRect]];
+			a[SCStreamFrameInfoContentScale], a[SCStreamFrameInfoScaleFactor], screenRect];
 		if (![geometry isEqualToString:_lastGeometry] && _geometryLogs++ < 12) { _lastGeometry = geometry; reshade::log::message(reshade::log::level::info, "Screen filter: frame geometry: %s", geometry.UTF8String); }
 	}
 	[_lock lock];
@@ -454,7 +459,6 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 			++_statShown;
 		} else ++_statDropped;
 	}
-	macshade_frame_limit();
 	_statMs += -[t0 timeIntervalSinceNow] * 1000.0;
 	if (_statSince == nil) _statSince = [NSDate date];
 	if (-[_statSince timeIntervalSinceNow] >= 10.0 && _statFrames > 0) {
@@ -514,7 +518,6 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	NSDate *tShade = [NSDate date];
 	if (!macshade_bridge_process(w, h, (__bridge void *)_detached, _work)) return;   // ReShade works on the private surface
 	NSDate *tOut = [NSDate date];
-	macshade_frame_limit();
 	// a display surface the window server is not using (an unfinished frame must never be visible)
 	++_statFrames;
 	int slot = -1;
