@@ -70,3 +70,11 @@ Report: on a Mac mini with an external monitor the picture was about 96 % of the
 - `SCStreamFrameInfoBoundingRect` (macOS 14) and `SCStreamFrameInfoScreenRect` (macOS 13.1) are guarded with `@available`; before 0.4.5 reading a missing key would have crashed the filter on macOS 13. Without the bounding rect there is no crop.
 - The crop is `(content.origin - bounding.origin) / bounding.size`.
 - Frame rate limit in screen filter mode: it sets `minimumFrameInterval` (the captured, so the filtered, picture); the helper no longer sleeps after each frame. The game itself is not limited (another process); the game page says so.
+
+## 0.4.6: the window as ScreenCaptureKit sees it
+Report (Mac with a 1920x1080 display, macOS 15): the filtered picture was 96 % of the window, black bar on top, strip on the right, clicks beside the buttons. The frame attachments showed `contentScale 0.9609`, `contentRect 1844.8x1080 pt`, surface 1920x1080 at `scaleFactor 1`: ScreenCaptureKit shrank the window to fit, so it sees the window as 1844.8/0.9609 x 1080/0.9609 = 1920x1124 pt, 44 pt taller than the window list says (a title bar above the top of the display; the black bar and the strip in the old screenshot match: 44 x 0.9609 = 42 px, 1920 - 1844.8 = 75 px). The 0.4.3 crop divided `contentRect` by `boundingRect` (equal) and cropped nothing. Now:
+- crop = `contentRect * scaleFactor` (pixels per point) / surface size;
+- source size = `contentRect / contentScale`; when it is larger than the window list's size the overlay is extended by the difference (assumed above the window, so the extra part lies above the screen edge, `constrainFrameRect:` already allows that) and the capture is restarted at that size so nothing is shrunk;
+- the geometry log ignores the moving window position (a sliding full-screen window used up the 12 lines), and logs the derived values;
+- half resolution is enlarged with a linear filter (nearest-neighbour looked like a stretched video).
+Verified with `MACSHADE_FILTER_FORCE_SIZE=1920x1080` on a 1000x632 window (reproduces the shrink: `contentScale 0.8544`, content at the left of the surface) and with a borderless window 44 pt above the screen. Not verified: the reporter's case itself (the window list and ScreenCaptureKit agreed on the height in every test here), and that the extra height is above the window.

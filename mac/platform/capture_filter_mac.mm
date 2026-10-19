@@ -103,6 +103,8 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	int _missing, _hideTicks, _restartTicks;
 	CGRect _contentRect;   // normalised: the window content inside the captured frame
 	NSString *_lastGeometry; int _geometryLogs;
+	CGSize _sourceSize;   // the window's real size in points as ScreenCaptureKit sees it (content size / content scale); can be larger than the window list says
+	BOOL _extraLogged;
 	CGFloat _pixelScale;   // pixels per point as ScreenCaptureKit reports it for the filter (macOS 14 and later), 0 = not known
 	BOOL _hotkeysOn; EventHotKeyRef _hotkeyRefs[3];
 	BOOL _bypass, _bypassEnabled; int _idleTicks; NSDate *_noBypassUntil;   // effects off: the game runs unfiltered, the capture is stopped
@@ -141,7 +143,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	_window.ignoresMouseEvents = YES; _window.releasedWhenClosed = NO;
 	_window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle;
 	_view = [[NSView alloc] initWithFrame:_window.contentView.bounds];
-	_view.wantsLayer = YES; _view.layer.contentsGravity = kCAGravityResize; _view.layer.magnificationFilter = kCAFilterNearest;
+	_view.wantsLayer = YES; _view.layer.contentsGravity = kCAGravityResize; _view.layer.magnificationFilter = (self.captureScale > 0 && self.captureScale < 0.99) ? kCAFilterLinear : kCAFilterNearest;   // half resolution looks pixelated with nearest-neighbour enlargement
 	_view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 	[_window.contentView addSubview:_view];
 
@@ -246,6 +248,14 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	}
 	CGRect r; CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)info[(id)kCGWindowBounds], &r);
 	const CGFloat top = NSScreen.screens.firstObject.frame.size.height;
+	// ScreenCaptureKit can know the window as larger than the window list says (a title bar above the top of the screen): the frame then holds the whole window, shrunk to fit.
+	// The overlay has to be as large as that window, with the extra part above and beyond the screen, so that the picture and the real window coincide.
+	[_lock lock]; const CGSize source = _sourceSize; [_lock unlock];
+	CGFloat extraW = 0, extraH = 0;
+	if (source.width > r.size.width + 1.5 && source.width < r.size.width + 400) extraW = source.width - r.size.width;
+	if (source.height > r.size.height + 1.5 && source.height < r.size.height + 400) extraH = source.height - r.size.height;
+	if ((extraW > 0 || extraH > 0) && !_extraLogged) { _extraLogged = YES; reshade::log::message(reshade::log::level::info, "Screen filter: the window list says %.1fx%.1f pt, ScreenCaptureKit sees the window as %.1fx%.1f pt: the overlay is extended by %.1f pt (width) and %.1f pt (height, above the window).", r.size.width, r.size.height, source.width, source.height, extraW, extraH); }
+	r.size.width += extraW; r.size.height += extraH; r.origin.y -= extraH;   // the extra height is above the visible part (the title bar)
 	NSRect frame = NSMakeRect(r.origin.x, top - r.origin.y - r.size.height, r.size.width, r.size.height);
 	if (fabs(frame.origin.x - _window.frame.origin.x) > 0.5 || fabs(frame.origin.y - _window.frame.origin.y) > 0.5 || fabs(frame.size.width - _window.frame.size.width) > 0.5 || fabs(frame.size.height - _window.frame.size.height) > 0.5) {
 		[_window setFrame:frame display:YES];
@@ -278,7 +288,8 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	for (NSScreen *sc in NSScreen.screens) { NSRect i = NSIntersectionRect(sc.frame, frame); const CGFloat o = i.size.width * i.size.height; if (o > bestOverlap) { bestOverlap = o; screen = sc; } }
 	const CGWindowID wid = [info[(id)kCGWindowNumber] unsignedIntValue];
 	const CGFloat factor = (_pixelScale > 0 ? _pixelScale : screen.backingScaleFactor) * (self.captureScale > 0 ? self.captureScale : 1.0);   // the same rule as in startStream
-	const CGSize size = CGSizeMake(round(r.size.width * factor), round(r.size.height * factor));
+	CGSize size = CGSizeMake(round(r.size.width * factor), round(r.size.height * factor));
+	if (const char *forced = std::getenv("MACSHADE_FILTER_FORCE_SIZE")) { int fw = 0, fh = 0; if (std::sscanf(forced, "%dx%d", &fw, &fh) == 2 && fw > 0 && fh > 0) size = CGSizeMake(fw, fh); }
 	const BOOL differs = wid != _windowID || fabs(size.width - _captureSize.width) > 2 || fabs(size.height - _captureSize.height) > 2;
 	if (!differs) { _restartTicks = 0; return; }
 	if (wid == _pendingWID && fabs(size.width - _pendingSize.width) <= 2 && fabs(size.height - _pendingSize.height) <= 2) ++_restartTicks; else { _pendingWID = wid; _pendingSize = size; _restartTicks = 1; }
@@ -301,7 +312,8 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 			if (@available(macOS 14.0, *)) { pps = filter.pointPixelScale; filterRect = filter.contentRect; }
 			const CGFloat unit = pps > 0 ? pps : backing;
 			const CGFloat halve = self.captureScale > 0 ? self.captureScale : 1.0;   // half resolution capture: fewer pixels for ReShade
-			const CGSize size = CGSizeMake(round(points.width * unit * halve), round(points.height * unit * halve));
+			CGSize size = CGSizeMake(round(points.width * unit * halve), round(points.height * unit * halve));
+			if (const char *forced = std::getenv("MACSHADE_FILTER_FORCE_SIZE")) { int fw = 0, fh = 0; if (std::sscanf(forced, "%dx%d", &fw, &fh) == 2 && fw > 0 && fh > 0) size = CGSizeMake(fw, fh); }   // test aid: provoke scale-to-fit
 			self->_pixelScale = pps;
 			reshade::log::message(reshade::log::level::info, "Screen filter: capture size: window %.1fx%.1f pt (filter content rect %.1f,%.1f %.1fx%.1f), pointPixelScale %.3f, screen backingScaleFactor %.3f, scale %.2f -> %.0fx%.0f px", points.width, points.height, filterRect.origin.x, filterRect.origin.y, filterRect.size.width, filterRect.size.height, pps, backing, halve, size.width, size.height);
 			SCStreamConfiguration *config = [SCStreamConfiguration new];
@@ -341,21 +353,30 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	if (type != SCStreamOutputTypeScreen || !CMSampleBufferIsValid(sampleBuffer)) return;
 	NSArray *attachments = (__bridge NSArray *)CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, false);
 	if ([attachments.firstObject[SCStreamFrameInfoStatus] integerValue] != SCFrameStatusComplete) return;
-	// where the window content lies inside the frame (points) and how many points the frame has: the crop keeps margins out of ReShade and the window
+	// Where the window content lies inside the frame. ContentRect is in points of the surface, ScaleFactor is pixels per point, ContentScale is how much
+	// ScreenCaptureKit shrank the window to fit the surface (below 1 when the window is larger than the surface: e.g. a title bar above the screen edge).
 	NSDictionary *a = attachments.firstObject; CGRect bounding = CGRectZero, content = CGRectZero;
-	if (@available(macOS 14.0, *)) CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)a[SCStreamFrameInfoBoundingRect], &bounding);   // the key does not exist before macOS 14: no crop there
+	if (@available(macOS 14.0, *)) CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)a[SCStreamFrameInfoBoundingRect], &bounding);   // the key does not exist before macOS 14
 	CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)a[SCStreamFrameInfoContentRect], &content);
-	// both rects are in surface coordinates: the content's place relative to the bounding box, as a fraction of it
-	_contentRect = (bounding.size.width > 0 && content.size.width > 0) ? CGRectMake((content.origin.x - bounding.origin.x) / bounding.size.width, (content.origin.y - bounding.origin.y) / bounding.size.height, content.size.width / bounding.size.width, content.size.height / bounding.size.height) : CGRectMake(0, 0, 1, 1);
-	{   // log every change of the geometry (not every frame): what ScreenCaptureKit reports, so a report shows where picture and window differ
-		IOSurfaceRef surface = CVPixelBufferGetIOSurface(CMSampleBufferGetImageBuffer(sampleBuffer));
+	IOSurfaceRef surface = CVPixelBufferGetIOSurface(CMSampleBufferGetImageBuffer(sampleBuffer));
+	const double surfW = surface ? (double)IOSurfaceGetWidth(surface) : 0, surfH = surface ? (double)IOSurfaceGetHeight(surface) : 0;
+	const double scaleFactor = [a[SCStreamFrameInfoScaleFactor] doubleValue], contentScale = [a[SCStreamFrameInfoContentScale] doubleValue];
+	const double ppp = scaleFactor >= 1.0 ? scaleFactor : (bounding.size.width > 0 && surfW > 0 ? surfW / bounding.size.width : 1.0);   // pixels per point
+	CGRect fraction = CGRectMake(0, 0, 1, 1);
+	if (surfW > 0 && surfH > 0 && content.size.width > 0 && content.size.height > 0) {
+		fraction = CGRectMake(content.origin.x * ppp / surfW, content.origin.y * ppp / surfH, content.size.width * ppp / surfW, content.size.height * ppp / surfH);
+		if (fraction.origin.x < 0 || fraction.origin.y < 0 || CGRectGetMaxX(fraction) > 1.01 || CGRectGetMaxY(fraction) > 1.01) fraction = CGRectMake(0, 0, 1, 1);   // implausible: do not crop
+	}
+	CGSize source = CGSizeZero;
+	if (content.size.width > 0 && contentScale > 0.2 && contentScale <= 1.01) source = CGSizeMake(content.size.width / contentScale, content.size.height / contentScale);
+	[_lock lock]; _contentRect = fraction; _sourceSize = source; [_lock unlock];
+	{   // log every change of the geometry (not of the position, a window sliding in would use up the log): what ScreenCaptureKit reports
 		id screenRect = nil;
 		if (@available(macOS 13.1, *)) screenRect = a[SCStreamFrameInfoScreenRect];
-		NSString *geometry = [NSString stringWithFormat:@"surface %zux%zu, boundingRect %.1f,%.1f %.1fx%.1f, contentRect %.1f,%.1f %.1fx%.1f, contentScale %@, scaleFactor %@, screenRect %@",
-			surface ? IOSurfaceGetWidth(surface) : 0, surface ? IOSurfaceGetHeight(surface) : 0,
-			bounding.origin.x, bounding.origin.y, bounding.size.width, bounding.size.height, content.origin.x, content.origin.y, content.size.width, content.size.height,
-			a[SCStreamFrameInfoContentScale], a[SCStreamFrameInfoScaleFactor], screenRect];
-		if (![geometry isEqualToString:_lastGeometry] && _geometryLogs++ < 12) { _lastGeometry = geometry; reshade::log::message(reshade::log::level::info, "Screen filter: frame geometry: %s", geometry.UTF8String); }
+		NSString *geometry = [NSString stringWithFormat:@"surface %.0fx%.0f, boundingRect %.1f,%.1f %.1fx%.1f, contentRect %.1f,%.1f %.1fx%.1f, contentScale %.4f, scaleFactor %.2f -> window as seen by ScreenCaptureKit %.1fx%.1f pt, crop %.3f,%.3f %.3fx%.3f",
+			surfW, surfH, bounding.origin.x, bounding.origin.y, bounding.size.width, bounding.size.height, content.origin.x, content.origin.y, content.size.width, content.size.height, contentScale, scaleFactor,
+			source.width, source.height, fraction.origin.x, fraction.origin.y, fraction.size.width, fraction.size.height];
+		if (![geometry isEqualToString:_lastGeometry] && _geometryLogs++ < 20) { _lastGeometry = geometry; reshade::log::message(reshade::log::level::info, "Screen filter: frame geometry: %s; screenRect %s", geometry.UTF8String, [[screenRect description] stringByReplacingOccurrencesOfString:@"\n" withString:@" "].UTF8String); }
 	}
 	[_lock lock];
 	if (_last) CFRelease(_last);
@@ -476,7 +497,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	if (fw < 16 || fh < 16) return;
 	// the part of the frame that is the window content (the whole frame unless ScreenCaptureKit reports margins)
 	uint32_t cx = 0, cy = 0, w = fw, h = fh;
-	const CGRect cr = _contentRect;
+	[_lock lock]; const CGRect cr = _contentRect; [_lock unlock];
 	if (cr.size.width > 0.2 && cr.size.height > 0.2 && (cr.size.width < 0.99 || cr.size.height < 0.99 || cr.origin.x > 0.01 || cr.origin.y > 0.01)) {
 		cx = (uint32_t)MAX(0.0, round(cr.origin.x * fw)); cy = (uint32_t)MAX(0.0, round(cr.origin.y * fh));
 		w = (uint32_t)round(cr.size.width * fw); h = (uint32_t)round(cr.size.height * fh);
