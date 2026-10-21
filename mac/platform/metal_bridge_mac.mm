@@ -261,7 +261,8 @@ namespace
 		}
 	}
 
-	bool pipeline_enabled() { static const bool on = std::getenv("MACSHADE_PIPELINE") != nullptr; return on; }
+	/// Metal games are pipelined only when asked for explicitly (MACSHADE_PIPELINE_METAL): two frames more delay, and the game keeps its own pacing otherwise
+	bool pipeline_enabled() { static const bool on = std::getenv("MACSHADE_PIPELINE_METAL") != nullptr; return on; }
 
 	typedef void (*PresentDrawableFn)(id, SEL, id<MTLDrawable>);
 	extern PresentDrawableFn s_orig_present;

@@ -271,6 +271,7 @@ final class Launcher: ObservableObject {
         env["MACSHADE_MOLTENVK"] = own.map { bundle.appendingPathComponent($0).path } ?? Paths.dylib.deletingLastPathComponent().appendingPathComponent("libMoltenVK.dylib").path
         env["MACSHADE_BASE"] = instance.path
         if game.pipeline { env["MACSHADE_PIPELINE"] = "1" }
+        if game.pipelineMetal { env["MACSHADE_PIPELINE_METAL"] = "1" }
         if game.fpsLimit > 0 { env["MACSHADE_FPS_LIMIT"] = String(game.fpsLimit) }
         p.environment = env
         p.standardOutput = out; p.standardError = out

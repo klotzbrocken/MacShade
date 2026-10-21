@@ -288,6 +288,14 @@ struct GameDetail: View {
                     }
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
+            Card {
+                Toggle(isOn: $game.pipelineMetal) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Smooth frame rate for Metal games (about 2 frames more input delay, gives effects a depth buffer)").font(.system(size: 15, weight: .bold))
+                        Text("Off by default: Metal games pace their own frames, and the extra delay is noticeable in racing and action games. Takes effect at the next start.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    }
+                }.toggleStyle(.switch).tint(Theme.accent)
+            }
         }
     }
 
@@ -354,7 +362,7 @@ struct GameDetail: View {
             Card {
                 Toggle(isOn: $game.pipeline) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Smooth frame rate for OpenGL and Metal games (about 2 frames more input delay)").font(.system(size: 15, weight: .bold))
+                        Text("Smooth frame rate for OpenGL games (about 2 frames more input delay)").font(.system(size: 15, weight: .bold))
                         Text("Hands frames to ReShade two frames late, so the game never waits for it. Takes effect at the next start.").font(.system(size: 13)).foregroundStyle(Theme.muted)
                     }
                 }.toggleStyle(.switch).tint(Theme.accent)

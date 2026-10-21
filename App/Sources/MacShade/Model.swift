@@ -24,8 +24,10 @@ struct Game: Codable, Identifiable, Hashable {
     var captureHalfResolution = false
     /// Screen filter mode: the capture size follows the load (100 %, 90 %, 75 %). Off by default; not combined with half resolution.
     var captureDynamic = false
+    /// Smooth frame rate (two frames later) for Metal games: off by default, the delay is noticeable and Metal games pace their own frames. OpenGL games use `pipeline`.
+    var pipelineMetal = false
 
-    enum CodingKeys: String, CodingKey { case id, name, sourcePath, arguments, suppressRestoreDialog, overlayKey, screenshotKey, effectsKey, autoStart, pipeline, fpsLimit, captureMode, captureHalfResolution, captureDynamic }
+    enum CodingKeys: String, CodingKey { case id, name, sourcePath, arguments, suppressRestoreDialog, overlayKey, screenshotKey, effectsKey, autoStart, pipeline, fpsLimit, captureMode, captureHalfResolution, captureDynamic, pipelineMetal }
     init(name: String, sourcePath: String) {
         self.name = name; self.sourcePath = sourcePath
         let d = GlobalKeys.load(); overlayKey = d.overlay; screenshotKey = d.screenshot; effectsKey = d.effects   // new games always start from the global shortcuts
@@ -49,6 +51,7 @@ struct Game: Codable, Identifiable, Hashable {
         captureMode = try c.decodeIfPresent(Bool.self, forKey: .captureMode) ?? false
         captureHalfResolution = try c.decodeIfPresent(Bool.self, forKey: .captureHalfResolution) ?? false
         captureDynamic = try c.decodeIfPresent(Bool.self, forKey: .captureDynamic) ?? false
+        pipelineMetal = try c.decodeIfPresent(Bool.self, forKey: .pipelineMetal) ?? false
     }
 }
 
