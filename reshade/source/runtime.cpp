@@ -5324,8 +5324,14 @@ bool reshade::runtime::is_idle(bool *fps_only) const
 	if (!_is_initialized || is_loading() || _show_overlay || _should_save_screenshot || _is_in_preset_transition || !_preset_save_successful)
 		return false;
 	const auto now = std::chrono::high_resolution_clock::now();
+#ifdef __APPLE__
+	// MacShade: a tutorial that was never started must not keep the bridges busy for ever (every frame copied twice for nothing while the effects are off)
+	if (_show_splash && (_reload_count <= 1 && (now - _last_reload_time) < std::chrono::seconds(5)))
+		return false;
+#else
 	if (_show_splash && ((_reload_count <= 1 && (now - _last_reload_time) < std::chrono::seconds(5)) || (_tutorial_index == 0 && _input != nullptr)))
 		return false;
+#endif
 	if (_show_clock == 1 || _show_frametime == 1 || _show_preset_name == 1)
 		return false;
 	if ((_show_screenshot_message || !_last_screenshot_save_successful) && (now - _last_screenshot_time) < std::chrono::seconds(5))

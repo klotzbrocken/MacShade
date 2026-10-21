@@ -344,6 +344,14 @@ struct GameDetail: View {
                 }.toggleStyle(.switch).tint(Theme.accent)
             }
             Card {
+                Toggle(isOn: $game.captureDynamic) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Dynamic resolution (screen filter mode)").font(.system(size: 15, weight: .bold))
+                        Text("Only used in the screen filter mode: when ReShade cannot keep up, the capture size drops in steps (100 %, 90 %, 75 %) and returns when there is room again. The picture gets slightly softer and flickers briefly at each change. Not combined with half resolution. Takes effect at the next start.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    }
+                }.toggleStyle(.switch).tint(Theme.accent).disabled(game.captureHalfResolution)
+            }
+            Card {
                 Toggle(isOn: $game.pipeline) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Smooth frame rate for OpenGL and Metal games (about 2 frames more input delay)").font(.system(size: 15, weight: .bold))

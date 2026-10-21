@@ -22,8 +22,10 @@ struct Game: Codable, Identifiable, Hashable {
     var captureMode = false
     /// Screen filter mode: capture the window at half the pixel size (faster, softer). Off by default.
     var captureHalfResolution = false
+    /// Screen filter mode: the capture size follows the load (100 %, 90 %, 75 %). Off by default; not combined with half resolution.
+    var captureDynamic = false
 
-    enum CodingKeys: String, CodingKey { case id, name, sourcePath, arguments, suppressRestoreDialog, overlayKey, screenshotKey, effectsKey, autoStart, pipeline, fpsLimit, captureMode, captureHalfResolution }
+    enum CodingKeys: String, CodingKey { case id, name, sourcePath, arguments, suppressRestoreDialog, overlayKey, screenshotKey, effectsKey, autoStart, pipeline, fpsLimit, captureMode, captureHalfResolution, captureDynamic }
     init(name: String, sourcePath: String) {
         self.name = name; self.sourcePath = sourcePath
         let d = GlobalKeys.load(); overlayKey = d.overlay; screenshotKey = d.screenshot; effectsKey = d.effects   // new games always start from the global shortcuts
@@ -46,6 +48,7 @@ struct Game: Codable, Identifiable, Hashable {
         fpsLimit = try c.decodeIfPresent(Int.self, forKey: .fpsLimit) ?? 0
         captureMode = try c.decodeIfPresent(Bool.self, forKey: .captureMode) ?? false
         captureHalfResolution = try c.decodeIfPresent(Bool.self, forKey: .captureHalfResolution) ?? false
+        captureDynamic = try c.decodeIfPresent(Bool.self, forKey: .captureDynamic) ?? false
     }
 }
 

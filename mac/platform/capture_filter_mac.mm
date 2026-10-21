@@ -36,6 +36,10 @@ void macshade_bridge_request_screenshot();
 void macshade_frame_limit();
 bool macshade_bridge_pipeline_init(uint32_t width, uint32_t height, void *layer, void *const io_surfaces[3], void *const depth_surfaces[3]);
 void macshade_bridge_pipeline_submit(int slot, bool with_depth);
+void macshade_bridge_pipeline_submit_to(int slot, bool with_depth, int out, int source, int source_x, int source_y);
+int macshade_bridge_pipeline_import_source(void *surface, uint32_t id, uint32_t width, uint32_t height);
+void macshade_bridge_pipeline_clear_sources();
+bool macshade_bridge_pipeline_set_outputs(void *const surfaces[], int count);
 void macshade_bridge_pipeline_wait(int slot);
 void macshade_bridge_pipeline_drain();
 
@@ -64,6 +68,7 @@ namespace
 @property pid_t pid;
 @property HotKey overlayKey, effectsKey, screenshotKey;
 @property double captureScale;
+@property BOOL dynamicResolution;   // the capture size follows the load: 100 %, 90 %, 75 % (not with a fixed half resolution)
 - (void)start;
 - (void)hotkey:(UInt32)which;
 @end
@@ -111,10 +116,14 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	BOOL _bypass, _bypassEnabled; int _idleTicks; NSDate *_noBypassUntil;   // effects off: the game runs unfiltered, the capture is stopped
 	// statistics, logged every few seconds
 	unsigned _statFrames, _statShown, _statDropped; double _statMs, _statIn, _statShade, _statOut; NSDate *_statSince;
+	double _gpuBlitIn, _gpuBlitOut; unsigned _gpuBlitInN, _gpuBlitOutN;   // GPU time of the two Metal copies (guarded by _lock)
 	std::atomic<bool> _pending[5];   // display surfaces whose copy has not finished on the GPU yet
 	// pipelined mode (MACSHADE_PIPELINE): three frames circulate, ReShade works on them while the next ones are captured; the result is shown two frames late
 	BOOL _pipelined;
 	IOSurfaceRef _ring[3]; id<MTLTexture> _ringTex[3]; id<MTLCommandBuffer> _ringCb[3];
+	int _dynLevel, _dynHigh, _dynLow; double _dynBusy; NSDate *_dynSince; CFAbsoluteTime _dynQuietUntil;   // dynamic resolution controller
+	CMSampleBufferRef _hold[3]; int _srcIdx[3], _srcX[3], _srcY[3]; BOOL _directIn;   // direct input: the captured frame itself is read by Vulkan; it is held until the job of its slot is done
+	int _outFor[3]; BOOL _directOut;   // direct output: display surface chosen for the job in each ring slot (-1: none), ReShade's copy goes straight into it
 	uint64_t _frameNumber; uint32_t _pipeW, _pipeH;
 	CFAbsoluteTime _lastCapture; int _flushLeft;   // idle: the captured frame is fed again a few times so the pipeline empties
 	CMSampleBufferRef _flushSample;
@@ -131,6 +140,10 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 		_device = MTLCreateSystemDefaultDevice();
 		_pipelined = std::getenv("MACSHADE_PIPELINE") != nullptr;
 		_bypassEnabled = std::getenv("MACSHADE_FILTER_NO_BYPASS") == nullptr;
+		_directOut = std::getenv("MACSHADE_FILTER_METAL_COPY") == nullptr;   // MACSHADE_FILTER_METAL_COPY=1: the old way, a Metal blit from the ring into the display surface
+		_directIn = _directOut && std::getenv("MACSHADE_FILTER_METAL_IN") == nullptr;   // MACSHADE_FILTER_METAL_IN=1: copy the captured frame through Metal into the ring
+		for (int &o : _outFor) o = -1;
+		for (int i = 0; i < 3; ++i) { _hold[i] = nullptr; _srcIdx[i] = -1; }
 		_commands = [_device newCommandQueue];
 	}
 	return self;
@@ -145,6 +158,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	_window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary | NSWindowCollectionBehaviorStationary | NSWindowCollectionBehaviorIgnoresCycle;
 	_view = [[NSView alloc] initWithFrame:_window.contentView.bounds];
 	_view.wantsLayer = YES; _view.layer.contentsGravity = kCAGravityResize; _view.layer.magnificationFilter = (self.captureScale > 0 && self.captureScale < 0.99) ? kCAFilterLinear : kCAFilterNearest;   // half resolution looks pixelated with nearest-neighbour enlargement
+	if (self.dynamicResolution) _view.layer.magnificationFilter = kCAFilterLinear;   // smoothed when the capture is smaller than the window
 	_view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
 	[_window.contentView addSubview:_view];
 
@@ -322,7 +336,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 			SCStreamConfiguration *config = [SCStreamConfiguration new];
 			config.width = (size_t)size.width; config.height = (size_t)size.height;
 			config.pixelFormat = kCVPixelFormatType_32BGRA;
-			config.showsCursor = NO; config.queueDepth = 4;
+			config.showsCursor = NO; config.queueDepth = (self->_pipelined && self->_directIn) ? 6 : 4;   // direct input holds up to three frames
 			// the frame rate limit of the game page limits the captured (and so the filtered) picture; the game itself keeps running at its own rate
 			const double limit = std::getenv("MACSHADE_FPS_LIMIT") ? std::atof(std::getenv("MACSHADE_FPS_LIMIT")) : 0.0;
 			config.minimumFrameInterval = limit >= 1.0 ? CMTimeMakeWithSeconds(1.0 / limit, 600) : CMTimeMake(1, 120);
@@ -335,7 +349,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 						reshade::log::message(reshade::log::level::error, "Screen filter: capture failed: %s", (startError ?: addError).localizedDescription.UTF8String);
 						fprintf(stderr, "MACSHADE_CAPTURE_FAILED %s\n", (startError ?: addError).localizedDescription.UTF8String);
 					} else {
-						self->_stream = stream; self->_windowID = wid; self->_captureSize = size;
+						self->_stream = stream; self->_windowID = wid; self->_captureSize = size; [self releaseSources];
 						reshade::log::message(reshade::log::level::info, "Screen filter: capturing window %u of pid %d at %.0fx%.0f.", wid, (int)self.pid, size.width, size.height);
 					}
 					self->_starting = NO;
@@ -413,10 +427,45 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 
 /// Runs on `_queue`: copies the captured frame into a private surface, lets ReShade work on it and hands it to the overlay window.
 /// (Re)creates the surfaces and the bridge for a new picture size. Everything in flight has to be finished first.
-- (BOOL)setupPipelineWidth:(uint32_t)w height:(uint32_t)h
+/// Dynamic resolution: once a second the share of time this thread spent on frames is looked at. Busy for three seconds (the GPU cannot keep up): one step down.
+/// At a lower step the load the higher one would cause is estimated (cost grows with the pixel count); only when that is comfortably low for ten seconds: one step up.
+- (void)dynamicFrame:(double)ms
+{
+	if (!self.dynamicResolution) return;
+	static const double levels[3] = { 1.0, 0.9, 0.75 };
+	static const double downThreshold = std::getenv("MACSHADE_DYN_DOWN") ? std::atof(std::getenv("MACSHADE_DYN_DOWN")) : 0.55, upThreshold = downThreshold * 0.8;
+	_dynBusy += ms;
+	if (_dynSince == nil) { _dynSince = [NSDate date]; _dynBusy = 0; return; }
+	const double elapsed = -[_dynSince timeIntervalSinceNow];
+	if (elapsed < 1.0) return;
+	const double busy = _dynBusy / 1000.0 / elapsed; _dynBusy = 0; _dynSince = [NSDate date];
+	if (_interactive || CFAbsoluteTimeGetCurrent() < _dynQuietUntil) { _dynHigh = _dynLow = 0; return; }   // menu open, or right after a change (the restart disturbs the numbers)
+	int target = _dynLevel;
+	if (_dynLevel < 2 && busy > downThreshold) { if (++_dynHigh >= 3) target = _dynLevel + 1; } else _dynHigh = 0;
+	if (_dynLevel > 0) { const double r = levels[_dynLevel - 1] / levels[_dynLevel]; if (busy * r * r < upThreshold) { if (++_dynLow >= 10) target = _dynLevel - 1; } else _dynLow = 0; } else _dynLow = 0;
+	if (target == _dynLevel) return;
+	reshade::log::message(reshade::log::level::info, "Screen filter: dynamic resolution %.0f%% -> %.0f%% (busy %.2f).", levels[_dynLevel] * 100, levels[target] * 100, busy);
+	_dynLevel = target; _dynHigh = _dynLow = 0; _dynQuietUntil = CFAbsoluteTimeGetCurrent() + 6;
+	self.captureScale = levels[target];   // the next tick sees the new size and restarts the capture
+}
+
+/// Everything in flight finished; display surfaces promised to jobs and held capture frames are given back.
+- (void)drainPipeline
 {
 	macshade_bridge_pipeline_drain();
 	for (int i = 0; i < 3; ++i) if (_ringCb[i]) { [_ringCb[i] waitUntilCompleted]; _ringCb[i] = nil; }
+	for (int i = 0; i < 3; ++i) { if (_outFor[i] >= 0) _pending[_outFor[i]] = false; _outFor[i] = -1; if (_hold[i]) { CFRelease(_hold[i]); _hold[i] = nullptr; } _srcIdx[i] = -1; }
+}
+
+- (void)releaseSources   // a new capture stream brings new surfaces
+{
+	dispatch_async(_queue, ^{ if (!self->_pipelined || !self->_directIn) return; [self drainPipeline]; macshade_bridge_pipeline_clear_sources(); });
+}
+
+- (BOOL)setupPipelineWidth:(uint32_t)w height:(uint32_t)h
+{
+	[self drainPipeline];
+	if (_directIn) macshade_bridge_pipeline_clear_sources();
 	for (int spin = 0; spin < 200; ++spin) { BOOL busy = NO; for (int i = 0; i < 5; ++i) busy |= _pending[i].load(); if (!busy) break; usleep(5000); }
 	NSDictionary *props = @{ (id)kIOSurfaceWidth: @(w), (id)kIOSurfaceHeight: @(h), (id)kIOSurfaceBytesPerElement: @4, (id)kIOSurfaceBytesPerRow: @((w * 4 + 63) & ~63), (id)kIOSurfacePixelFormat: @((uint32_t)'BGRA') };
 	MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:w height:h mipmapped:NO];
@@ -439,13 +488,14 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	dispatch_sync(dispatch_get_main_queue(), ^{ macshade_set_window_override((__bridge void *)layer, (__bridge void *)window); });
 	void *surfaces[3] = { _ring[0], _ring[1], _ring[2] };
 	if (!macshade_bridge_pipeline_init(w, h, (__bridge void *)_detached, surfaces, nullptr)) return NO;
+	if (_directOut) { void *outs[5]; for (int i = 0; i < 5; ++i) outs[i] = _out[i]; if (!macshade_bridge_pipeline_set_outputs(outs, 5)) { _directOut = NO; reshade::log::message(reshade::log::level::warning, "Screen filter: direct output failed, copying through Metal."); } }
 	_pipeW = w; _pipeH = h; _frameNumber = 0; _w = w; _h = h;
 	reshade::log::message(reshade::log::level::info, "Screen filter: pipelined processing of %ux%u frames (result shown two frames late).", w, h);
 	return YES;
 }
 
 /// Pipelined: copies this frame into a ring slot (not awaited), hands the previous one to ReShade (not awaited) and shows the one before that.
-- (void)renderPipelined:(IOSurfaceRef)source crop:(CGRect)crop frame:(CGSize)frame
+- (void)renderPipelined:(IOSurfaceRef)source sample:(CMSampleBufferRef)sample crop:(CGRect)crop frame:(CGSize)frame
 {
 	const uint32_t cx = (uint32_t)crop.origin.x, cy = (uint32_t)crop.origin.y, w = (uint32_t)crop.size.width, h = (uint32_t)crop.size.height;
 	if (w != _pipeW || h != _pipeH) {
@@ -453,30 +503,55 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	}
 	NSDate *t0 = [NSDate date];
 	++_statFrames;
-	MTLTextureDescriptor *sd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:(NSUInteger)frame.width height:(NSUInteger)frame.height mipmapped:NO];
-	sd.usage = MTLTextureUsageShaderRead; sd.storageMode = MTLStorageModeShared;
-	id<MTLTexture> src = [_device newTextureWithDescriptor:sd iosurface:source plane:0];
-	if (src == nil) return;
 	const uint64_t n = _frameNumber++;
 	const int cur = (int)(n % 3);
-	id<MTLCommandBuffer> cb = [_commands commandBuffer];
-	id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-	[blit copyFromTexture:src sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(cx, cy, 0) sourceSize:MTLSizeMake(w, h, 1) toTexture:_ringTex[cur] destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
-	[blit endEncoding]; [cb commit];
-	_ringCb[cur] = cb;
+	if (_hold[cur]) { CFRelease(_hold[cur]); _hold[cur] = nullptr; }
+	_srcIdx[cur] = -1; _ringCb[cur] = nil;
+	if (_directIn) {   // Vulkan reads the captured frame itself: no Metal copy into the ring
+		const int idx = macshade_bridge_pipeline_import_source(source, IOSurfaceGetID(source), (uint32_t)frame.width, (uint32_t)frame.height);
+		if (idx >= 0) { _hold[cur] = (CMSampleBufferRef)CFRetain(sample); _srcIdx[cur] = idx; _srcX[cur] = (int)cx; _srcY[cur] = (int)cy; }
+	}
+	if (_srcIdx[cur] < 0) {
+		MTLTextureDescriptor *sd = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm width:(NSUInteger)frame.width height:(NSUInteger)frame.height mipmapped:NO];
+		sd.usage = MTLTextureUsageShaderRead; sd.storageMode = MTLStorageModeShared;
+		id<MTLTexture> src = [_device newTextureWithDescriptor:sd iosurface:source plane:0];
+		if (src == nil) { --_frameNumber; return; }
+		id<MTLCommandBuffer> cb = [_commands commandBuffer];
+		id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+		[blit copyFromTexture:src sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(cx, cy, 0) sourceSize:MTLSizeMake(w, h, 1) toTexture:_ringTex[cur] destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
+		[blit endEncoding];
+		[cb addCompletedHandler:^(id<MTLCommandBuffer> done) { [self->_lock lock]; self->_gpuBlitIn += (done.GPUEndTime - done.GPUStartTime) * 1000.0; ++self->_gpuBlitInN; [self->_lock unlock]; }];
+		[cb commit];
+		_ringCb[cur] = cb;
+	}
 	if (n >= 1) {
 		const int prev = (int)((n - 1) % 3);
 		NSDate *t1 = [NSDate date];
 		[_ringCb[prev] waitUntilCompleted];   // a whole frame ago: normally done
 		NSDate *t2 = [NSDate date];
-		macshade_bridge_pipeline_submit(prev, false);
+		int outSlot = -1;
+		if (_directOut) {   // a display surface that is neither promised to a job nor still held by the window server
+			for (int k = 0; k < 5 && outSlot < 0; ++k) { const int c = (_next + k) % 5; if (!_pending[c].load() && !IOSurfaceIsInUse(_out[c])) outSlot = c; }
+			if (outSlot >= 0) { _next = (outSlot + 1) % 5; _pending[outSlot] = true; }
+			_outFor[prev] = outSlot;
+		}
+		macshade_bridge_pipeline_submit_to(prev, false, outSlot, _srcIdx[prev], _srcX[prev], _srcY[prev]);
 		_statIn += [t2 timeIntervalSinceDate:t1] * 1000.0; _statShade += -[t2 timeIntervalSinceNow] * 1000.0;
 	}
 	if (n >= 2) {
 		const int old = (int)((n - 2) % 3);
 		NSDate *t3 = [NSDate date];
 		macshade_bridge_pipeline_wait(old);   // ReShade's work on that frame
+		if (_hold[old]) { CFRelease(_hold[old]); _hold[old] = nullptr; }   // its captured frame has been read
 		_statOut += -[t3 timeIntervalSinceNow] * 1000.0;
+		if (_directOut) {   // ReShade's copy already went into the display surface: show it
+			const int slot = _outFor[old]; _outFor[old] = -1;
+			if (slot >= 0) {
+				IOSurfaceRef shown = _out[slot]; NSView *view = _view; std::atomic<bool> *flag = &_pending[slot];
+				dispatch_async(dispatch_get_main_queue(), ^{ [CATransaction begin]; [CATransaction setDisableActions:YES]; view.layer.contents = (__bridge id)shown; [CATransaction commit]; flag->store(false); });
+				++_statShown;
+			} else ++_statDropped;
+		} else {
 		int slot = -1;
 		for (int k = 0; k < 5 && slot < 0; ++k) { const int c = (_next + k) % 5; if (!_pending[c].load() && !IOSurfaceIsInUse(_out[c])) slot = c; }
 		if (slot >= 0) {
@@ -486,17 +561,22 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 			[blit2 copyFromTexture:_ringTex[old] sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0) sourceSize:MTLSizeMake(w, h, 1) toTexture:_outTex[slot] destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(0, 0, 0)];
 			[blit2 endEncoding];
 			IOSurfaceRef shown = _out[slot]; NSView *view = _view; std::atomic<bool> *flag = &_pending[slot];
-			[cb2 addCompletedHandler:^(id<MTLCommandBuffer>) {
+			[cb2 addCompletedHandler:^(id<MTLCommandBuffer> done) {
+				[self->_lock lock]; self->_gpuBlitOut += (done.GPUEndTime - done.GPUStartTime) * 1000.0; ++self->_gpuBlitOutN; [self->_lock unlock];
 				dispatch_async(dispatch_get_main_queue(), ^{ [CATransaction begin]; [CATransaction setDisableActions:YES]; view.layer.contents = (__bridge id)shown; [CATransaction commit]; flag->store(false); });
 			}];
 			[cb2 commit];
 			++_statShown;
 		} else ++_statDropped;
+		}
 	}
 	_statMs += -[t0 timeIntervalSinceNow] * 1000.0;
+	[self dynamicFrame:-[t0 timeIntervalSinceNow] * 1000.0];
 	if (_statSince == nil) _statSince = [NSDate date];
 	if (-[_statSince timeIntervalSinceNow] >= 10.0 && _statFrames > 0) {
 		reshade::log::message(reshade::log::level::info, "Screen filter: last %.0f s: %u frames in, %u shown, %u dropped, %.1f ms per frame (pipelined: wait for copy %.1f + submit %.1f + wait for ReShade %.1f).", -[_statSince timeIntervalSinceNow], _statFrames, _statShown, _statDropped, _statMs / _statFrames, _statIn / _statFrames, _statShade / _statFrames, _statOut / _statFrames);
+		[_lock lock]; const double bi = _gpuBlitInN ? _gpuBlitIn / _gpuBlitInN : 0, bo = _gpuBlitOutN ? _gpuBlitOut / _gpuBlitOutN : 0; _gpuBlitIn = _gpuBlitOut = 0; _gpuBlitInN = _gpuBlitOutN = 0; [_lock unlock];
+		reshade::log::message(reshade::log::level::info, "Screen filter: GPU time of the Metal copies: in %.3f ms, out %.3f ms per frame.", bi, bo);
 		_statFrames = _statShown = _statDropped = 0; _statMs = _statIn = _statShade = _statOut = 0; _statSince = [NSDate date];
 	}
 }
@@ -518,7 +598,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 		if (cy + h > fh) h = fh - cy;
 	}
 	if (w < 16 || h < 16) return;
-	if (_pipelined) { [self renderPipelined:source crop:CGRectMake(cx, cy, w, h) frame:CGSizeMake(fw, fh)]; return; }
+	if (_pipelined) { [self renderPipelined:source sample:sampleBuffer crop:CGRectMake(cx, cy, w, h) frame:CGSizeMake(fw, fh)]; return; }
 	NSDate *started = [NSDate date];
 	if (w != _w || h != _h) {
 		NSDictionary *props = @{ (id)kIOSurfaceWidth: @(w), (id)kIOSurfaceHeight: @(h), (id)kIOSurfaceBytesPerElement: @4, (id)kIOSurfaceBytesPerRow: @((w * 4 + 63) & ~63), (id)kIOSurfacePixelFormat: @((uint32_t)'BGRA') };
@@ -573,6 +653,7 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 	} else ++_statDropped;   // all busy: this frame is dropped
 	_statIn += [tShade timeIntervalSinceDate:tIn] * 1000.0; _statShade += [tOut timeIntervalSinceDate:tShade] * 1000.0; _statOut += -[tOut timeIntervalSinceNow] * 1000.0;
 	_statMs += -[started timeIntervalSinceNow] * 1000.0;
+	[self dynamicFrame:-[started timeIntervalSinceNow] * 1000.0];
 	if (_statSince == nil) _statSince = [NSDate date];
 	if (-[_statSince timeIntervalSinceNow] >= 10.0 && _statFrames > 0) {
 		reshade::log::message(reshade::log::level::info, "Screen filter: last %.0f s: %u frames in, %u shown, %u dropped, %.1f ms per frame (copy in %.1f + ReShade %.1f + copy out %.1f).", -[_statSince timeIntervalSinceNow], _statFrames, _statShown, _statDropped, _statMs / _statFrames, _statIn / _statFrames, _statShade / _statFrames, _statOut / _statFrames);
@@ -585,8 +666,10 @@ static OSStatus hotkey_handler(EventHandlerCallRef, EventRef event, void *)
 extern "C" __attribute__((visibility("default"))) int macshade_filter_main(int argc, char **argv)
 {
 	@autoreleasepool {
-		int pid = 0; double scale = 1.0; const char *overlay = nullptr, *effects = nullptr, *screenshot = nullptr;
-		for (int i = 1; i + 1 < argc; ++i) {
+		int pid = 0; double scale = 1.0; bool dynamic = false; const char *overlay = nullptr, *effects = nullptr, *screenshot = nullptr;
+		for (int i = 1; i < argc; ++i) {
+			if (!std::strcmp(argv[i], "--dynamic")) { dynamic = true; continue; }
+			if (i + 1 >= argc) break;
 			if (!std::strcmp(argv[i], "--pid")) pid = std::atoi(argv[i + 1]);
 			else if (!std::strcmp(argv[i], "--overlay")) overlay = argv[i + 1];
 			else if (!std::strcmp(argv[i], "--effects")) effects = argv[i + 1];
@@ -603,7 +686,7 @@ extern "C" __attribute__((visibility("default"))) int macshade_filter_main(int a
 		[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
 		if (NSRunningApplication *game = [NSRunningApplication runningApplicationWithProcessIdentifier:pid]; game.executableURL) g_target_executable_path = game.executableURL.path.UTF8String;   // screenshots get the game's name, not the helper's
 		s_controller = [MSFilterController new];
-		s_controller.captureScale = scale; s_controller.pid = pid; s_controller.overlayKey = parse_hotkey(overlay); s_controller.effectsKey = parse_hotkey(effects); s_controller.screenshotKey = parse_hotkey(screenshot);
+		s_controller.captureScale = scale; s_controller.dynamicResolution = dynamic && scale >= 0.99; s_controller.pid = pid; s_controller.overlayKey = parse_hotkey(overlay); s_controller.effectsKey = parse_hotkey(effects); s_controller.screenshotKey = parse_hotkey(screenshot);
 		[s_controller start];
 		[NSApp run];
 	}

@@ -54,12 +54,17 @@ namespace
 		// pipelined mode (see gl_bridge_mac.mm): three frames (images imported from the game's IOSurfaces) circulate; ReShade works on one private image
 		bool pipelined = false;
 		VkImage frames[3] = {};
+		VkImage src_images[8] = {}; uint32_t src_ids[8] = {}, src_w[8] = {}, src_h[8] = {}; int src_count = 0;   // captured frames imported as they come (screen filter), by IOSurface id
+		VkImage out_frames[8] = {};   // optional: display surfaces the finished frame is copied into directly (screen filter), see macshade_bridge_pipeline_set_outputs
+		int out_count = 0;
 		VkImage work = VK_NULL_HANDLE;
 		VkDeviceMemory work_memory = VK_NULL_HANDLE;
 		VkCommandPool pool = VK_NULL_HANDLE;
 		VkCommandBuffer cb_in[3] = {}, cb_out[3] = {};
 		VkFence fence[3] = {};
 		bool pending[3] = {};
+		// GPU timing of the two frame copies (MACSHADE_BRIDGE_STATS): four timestamps per slot
+		VkQueryPool qpool = VK_NULL_HANDLE; double ts_ns = 0, ts_sum[4] = {}; unsigned ts_n = 0;
 		// optional depth (supplied by the OpenGL/Metal side as R32F IOSurfaces): copied into one work image that ReShade's "DEPTH" semantic is bound to
 		bool depth = false;
 		VkImage depth_frames[3] = {};
@@ -98,9 +103,10 @@ namespace
 		if (b.swapchain_impl != nullptr) b.swapchain_impl->_override_image = VK_NULL_HANDLE;
 		g_macshade_depth_srv = 0;
 		if (b.depth_view.handle != 0 && b.device_impl != nullptr) b.device_impl->destroy_resource_view(b.depth_view);
+		if (const auto fn = device_fn<PFN_vkDestroyQueryPool>("vkDestroyQueryPool"); fn && b.qpool) fn(b.device, b.qpool, nullptr);
 		if (const auto fn = device_fn<PFN_vkDestroyFence>("vkDestroyFence")) for (VkFence f : b.fence) if (f) fn(b.device, f, nullptr);
 		if (const auto fn = device_fn<PFN_vkDestroyCommandPool>("vkDestroyCommandPool"); fn && b.pool) fn(b.device, b.pool, nullptr);
-		if (const auto fn = device_fn<PFN_vkDestroyImage>("vkDestroyImage")) { for (VkImage i : b.frames) if (i) fn(b.device, i, nullptr); if (b.work) fn(b.device, b.work, nullptr); for (VkImage i : b.depth_frames) if (i) fn(b.device, i, nullptr); if (b.depth_work) fn(b.device, b.depth_work, nullptr); }
+		if (const auto fn = device_fn<PFN_vkDestroyImage>("vkDestroyImage")) { for (VkImage i : b.frames) if (i) fn(b.device, i, nullptr); for (VkImage i : b.out_frames) if (i) fn(b.device, i, nullptr); for (VkImage i : b.src_images) if (i) fn(b.device, i, nullptr); if (b.work) fn(b.device, b.work, nullptr); for (VkImage i : b.depth_frames) if (i) fn(b.device, i, nullptr); if (b.depth_work) fn(b.device, b.depth_work, nullptr); }
 		if (const auto fn = device_fn<PFN_vkFreeMemory>("vkFreeMemory")) { if (b.work_memory) fn(b.device, b.work_memory, nullptr); if (b.depth_memory) fn(b.device, b.depth_memory, nullptr); }
 		if (const auto fn = device_fn<PFN_vkDestroyImage>("vkDestroyImage"); fn && b.image) fn(b.device, b.image, nullptr);
 		if (const auto fn = device_fn<PFN_vkDestroySwapchainKHR>("vkDestroySwapchainKHR"); fn && b.swapchain) fn(b.device, b.swapchain, nullptr);
@@ -296,22 +302,31 @@ namespace
 	}
 
 	/// Records "copy src -> dst" for a whole image. `work` rests in the present layout between jobs (what ReShade expects of a back buffer), the frames stay in GENERAL.
-	void record_copy(VkCommandBuffer cb, VkImage src, VkImage dst, bool work_is_dst, uint32_t width, uint32_t height, VkImage depth_src = VK_NULL_HANDLE, VkImage depth_dst = VK_NULL_HANDLE)
+	void record_copy(VkCommandBuffer cb, VkImage src, VkImage dst, bool work_is_dst, uint32_t width, uint32_t height, VkImage depth_src = VK_NULL_HANDLE, VkImage depth_dst = VK_NULL_HANDLE, int query = -1, int32_t src_x = 0, int32_t src_y = 0)
 	{
 		const VkImage work = work_is_dst ? dst : src;
 		const VkImageLayout work_layout = work_is_dst ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 		VkCommandBufferBeginInfo bi = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 		device_fn<PFN_vkBeginCommandBuffer>("vkBeginCommandBuffer")(cb, &bi);
+		const bool timed = query >= 0 && s_bridge.qpool != VK_NULL_HANDLE;   // query = first of the slot's four; the in-copy (even index) resets them
+		if (timed)
+		{
+			if (work_is_dst) device_fn<PFN_vkCmdResetQueryPool>("vkCmdResetQueryPool")(cb, s_bridge.qpool, query, 4);
+			device_fn<PFN_vkCmdWriteTimestamp>("vkCmdWriteTimestamp")(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, s_bridge.qpool, query + (work_is_dst ? 0 : 2));
+		}
 		image_barrier(cb, work, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, work_layout);
 		VkImageCopy region = {};
 		region.srcSubresource = region.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
 		region.extent = { width, height, 1 };
+		const VkImageCopy depth_region = region;   // the colour source can be a crop out of a larger frame, the depth is not
+		region.srcOffset = { src_x, src_y, 0 };
 		device_fn<PFN_vkCmdCopyImage>("vkCmdCopyImage")(cb, src, work_is_dst ? VK_IMAGE_LAYOUT_GENERAL : work_layout, dst, work_is_dst ? work_layout : VK_IMAGE_LAYOUT_GENERAL, 1, &region);
 		image_barrier(cb, work, work_layout, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+		if (timed) device_fn<PFN_vkCmdWriteTimestamp>("vkCmdWriteTimestamp")(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, s_bridge.qpool, query + (work_is_dst ? 1 : 3));
 		if (depth_src != VK_NULL_HANDLE)   // the frame's depth into the work image that ReShade samples (it rests in the shader-read layout)
 		{
 			image_barrier(cb, depth_dst, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-			device_fn<PFN_vkCmdCopyImage>("vkCmdCopyImage")(cb, depth_src, VK_IMAGE_LAYOUT_GENERAL, depth_dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+			device_fn<PFN_vkCmdCopyImage>("vkCmdCopyImage")(cb, depth_src, VK_IMAGE_LAYOUT_GENERAL, depth_dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &depth_region);
 			image_barrier(cb, depth_dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 		}
 		device_fn<PFN_vkEndCommandBuffer>("vkEndCommandBuffer")(cb);
@@ -375,6 +390,15 @@ namespace
 		VkFenceCreateInfo fci = { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
 		for (VkFence &f : b.fence) CHECK(device_fn<PFN_vkCreateFence>("vkCreateFence")(b.device, &fci, nullptr, &f));
 
+		if (std::getenv("MACSHADE_BRIDGE_STATS"))
+		{
+			VkQueryPoolCreateInfo qci = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO }; qci.queryType = VK_QUERY_TYPE_TIMESTAMP; qci.queryCount = 12;
+			VkPhysicalDeviceProperties dp = {};
+			instance_fn<PFN_vkGetPhysicalDeviceProperties>("vkGetPhysicalDeviceProperties")(b.physical, &dp);
+			if (device_fn<PFN_vkCreateQueryPool>("vkCreateQueryPool")(b.device, &qci, nullptr, &b.qpool) >= 0) b.ts_ns = dp.limits.timestampPeriod;
+			else b.qpool = VK_NULL_HANDLE;
+		}
+
 		// one-time: frames to GENERAL, work image to the resting (present) layout
 		VkCommandBuffer cb;
 		cai.commandBufferCount = 1;
@@ -423,6 +447,75 @@ bool macshade_bridge_pipeline_init(uint32_t width, uint32_t height, void *layer,
 	return true;
 }
 
+/// The screen filter hands in its display surfaces: the processed frame is then copied straight into one of them (see pipeline_submit_to) instead of back into the ring frame.
+bool macshade_bridge_pipeline_set_outputs(void *const surfaces[], int count)
+{
+	Bridge &b = s_bridge;
+	if (!b.initialized || !b.pipelined || count < 1 || count > 8) return false;
+	for (int i = 0; i < b.out_count; ++i) if (b.out_frames[i]) { device_fn<PFN_vkDestroyImage>("vkDestroyImage")(b.device, b.out_frames[i], nullptr); b.out_frames[i] = VK_NULL_HANDLE; }
+	b.out_count = 0;
+	for (int i = 0; i < count; ++i)
+	{
+		VkImportMetalIOSurfaceInfoEXT import_info = { VK_STRUCTURE_TYPE_IMPORT_METAL_IO_SURFACE_INFO_EXT };
+		import_info.ioSurface = static_cast<IOSurfaceRef>(surfaces[i]);
+		VkImageCreateInfo ci = frame_image_info(b.width, b.height, &import_info);
+		CHECK(device_fn<PFN_vkCreateImage>("vkCreateImage")(b.device, &ci, nullptr, &b.out_frames[i]));
+	}
+	VkCommandBufferAllocateInfo cai = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+	cai.commandPool = b.pool; cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; cai.commandBufferCount = 1;
+	VkCommandBuffer cb;
+	CHECK(device_fn<PFN_vkAllocateCommandBuffers>("vkAllocateCommandBuffers")(b.device, &cai, &cb));
+	VkCommandBufferBeginInfo bi = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO }; bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	device_fn<PFN_vkBeginCommandBuffer>("vkBeginCommandBuffer")(cb, &bi);
+	for (int i = 0; i < count; ++i) image_barrier(cb, b.out_frames[i], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+	device_fn<PFN_vkEndCommandBuffer>("vkEndCommandBuffer")(cb);
+	VkSubmitInfo si = { VK_STRUCTURE_TYPE_SUBMIT_INFO }; si.commandBufferCount = 1; si.pCommandBuffers = &cb;
+	CHECK(device_fn<PFN_vkQueueSubmit>("vkQueueSubmit")(b.queue, 1, &si, VK_NULL_HANDLE));
+	device_fn<PFN_vkQueueWaitIdle>("vkQueueWaitIdle")(b.queue);
+	device_fn<PFN_vkFreeCommandBuffers>("vkFreeCommandBuffers")(b.device, b.pool, 1, &cb);
+	b.out_count = count;
+	return true;
+}
+
+/// The screen filter lets the Vulkan side read the captured IOSurface itself (no Metal copy into the ring). Returns the source index for pipeline_submit_to, -1 if it cannot be imported.
+/// The caller keeps the surface alive and unchanged until the job of the slot is finished.
+int macshade_bridge_pipeline_import_source(void *surface, uint32_t id, uint32_t width, uint32_t height)
+{
+	Bridge &b = s_bridge;
+	if (!b.initialized || !b.pipelined) return -1;
+	for (int i = 0; i < b.src_count; ++i) if (b.src_ids[i] == id && b.src_w[i] == width && b.src_h[i] == height) return i;
+	if (b.src_count >= 8) return -1;
+	VkImportMetalIOSurfaceInfoEXT import_info = { VK_STRUCTURE_TYPE_IMPORT_METAL_IO_SURFACE_INFO_EXT };
+	import_info.ioSurface = static_cast<IOSurfaceRef>(surface);
+	VkImageCreateInfo ci = frame_image_info(width, height, &import_info, VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+	VkImage image = VK_NULL_HANDLE;
+	if (device_fn<PFN_vkCreateImage>("vkCreateImage")(b.device, &ci, nullptr, &image) < 0) return -1;
+	VkCommandBufferAllocateInfo cai = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+	cai.commandPool = b.pool; cai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; cai.commandBufferCount = 1;
+	VkCommandBuffer cb;
+	if (device_fn<PFN_vkAllocateCommandBuffers>("vkAllocateCommandBuffers")(b.device, &cai, &cb) < 0) { device_fn<PFN_vkDestroyImage>("vkDestroyImage")(b.device, image, nullptr); return -1; }
+	VkCommandBufferBeginInfo bi = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO }; bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+	device_fn<PFN_vkBeginCommandBuffer>("vkBeginCommandBuffer")(cb, &bi);
+	image_barrier(cb, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+	device_fn<PFN_vkEndCommandBuffer>("vkEndCommandBuffer")(cb);
+	VkSubmitInfo si = { VK_STRUCTURE_TYPE_SUBMIT_INFO }; si.commandBufferCount = 1; si.pCommandBuffers = &cb;
+	device_fn<PFN_vkQueueSubmit>("vkQueueSubmit")(b.queue, 1, &si, VK_NULL_HANDLE);
+	device_fn<PFN_vkQueueWaitIdle>("vkQueueWaitIdle")(b.queue);
+	device_fn<PFN_vkFreeCommandBuffers>("vkFreeCommandBuffers")(b.device, b.pool, 1, &cb);
+	const int index = b.src_count++;
+	b.src_images[index] = image; b.src_ids[index] = id; b.src_w[index] = width; b.src_h[index] = height;
+	return index;
+}
+
+/// Forgets the imported capture surfaces (a new capture stream brings new ones). Nothing may be in flight.
+void macshade_bridge_pipeline_clear_sources()
+{
+	Bridge &b = s_bridge;
+	if (!b.initialized) return;
+	if (const auto fn = device_fn<PFN_vkDestroyImage>("vkDestroyImage")) for (int i = 0; i < b.src_count; ++i) { if (b.src_images[i]) fn(b.device, b.src_images[i], nullptr); b.src_images[i] = VK_NULL_HANDLE; }
+	b.src_count = 0;
+}
+
 /// Waits for the job of `slot` (if one is running).
 void macshade_bridge_pipeline_wait(int slot)
 {
@@ -431,6 +524,24 @@ void macshade_bridge_pipeline_wait(int slot)
 	device_fn<PFN_vkWaitForFences>("vkWaitForFences")(b.device, 1, &b.fence[slot], VK_TRUE, UINT64_MAX);
 	device_fn<PFN_vkResetFences>("vkResetFences")(b.device, 1, &b.fence[slot]);
 	b.pending[slot] = false;
+	if (b.qpool != VK_NULL_HANDLE)
+	{
+		uint64_t t[4] = {};
+		const auto get = device_fn<PFN_vkGetQueryPoolResults>("vkGetQueryPoolResults");
+		int qr = VK_SUCCESS;
+		qr = get(b.device, b.qpool, slot * 4, 4, sizeof t, t, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+		static int shown = 0; if (shown++ < 3) reshade::log::message(reshade::log::level::info, "Bridge timestamps: result %d, %llu %llu %llu %llu, period %.3f ns", qr, (unsigned long long)t[0], (unsigned long long)t[1], (unsigned long long)t[2], (unsigned long long)t[3], b.ts_ns);
+		if (qr == VK_SUCCESS && t[3] >= t[0])
+		{
+			const double k = b.ts_ns * 1e-6;   // ticks -> ms
+			b.ts_sum[0] += (t[1] - t[0]) * k; b.ts_sum[1] += (t[2] - t[1]) * k; b.ts_sum[2] += (t[3] - t[2]) * k; b.ts_sum[3] += (t[3] - t[0]) * k;
+			if (++b.ts_n == 300)
+			{
+				reshade::log::message(reshade::log::level::info, "Bridge GPU split (ms/frame): copy-in %.3f, ReShade + gap %.3f, copy-out %.3f, whole %.3f", b.ts_sum[0] / b.ts_n, b.ts_sum[1] / b.ts_n, b.ts_sum[2] / b.ts_n, b.ts_sum[3] / b.ts_n);
+				b.ts_n = 0; for (double &x : b.ts_sum) x = 0;
+			}
+		}
+	}
 }
 
 void macshade_bridge_pipeline_drain() { for (int i = 0; i < 3; ++i) macshade_bridge_pipeline_wait(i); }
@@ -443,7 +554,11 @@ bool macshade_bridge_pipeline_uses_depth()
 	return b.initialized && b.depth && reshade::is_effect_runtime_using_depth(b.swapchain_impl);
 }
 
-void macshade_bridge_pipeline_submit(int slot, bool with_depth)
+void macshade_bridge_pipeline_submit_to(int slot, bool with_depth, int out, int source, int source_x, int source_y);
+void macshade_bridge_pipeline_submit(int slot, bool with_depth) { macshade_bridge_pipeline_submit_to(slot, with_depth, -1, -1, 0, 0); }
+
+/// `out` >= 0: the result goes into that display surface (set_outputs), otherwise back into the ring frame of `slot`.
+void macshade_bridge_pipeline_submit_to(int slot, bool with_depth, int out, int source, int source_x, int source_y)
 {
 	Bridge &b = s_bridge;
 	if (!b.initialized) return;
@@ -451,16 +566,17 @@ void macshade_bridge_pipeline_submit(int slot, bool with_depth)
 	const auto reset = device_fn<PFN_vkResetCommandBuffer>("vkResetCommandBuffer");
 	const auto submit = device_fn<PFN_vkQueueSubmit>("vkQueueSubmit");
 	reset(b.cb_in[slot], 0); reset(b.cb_out[slot], 0);
-	record_copy(b.cb_in[slot], b.frames[slot], b.work, true, b.width, b.height, with_depth && b.depth ? b.depth_frames[slot] : VK_NULL_HANDLE, b.depth_work);
-	record_copy(b.cb_out[slot], b.work, b.frames[slot], false, b.width, b.height);
+	const VkImage depth_src = with_depth && b.depth ? b.depth_frames[slot] : VK_NULL_HANDLE;
+	record_copy(b.cb_in[slot], source >= 0 && source < b.src_count ? b.src_images[source] : b.frames[slot], b.work, true, b.width, b.height, depth_src, b.depth_work, slot * 4, source >= 0 ? source_x : 0, source >= 0 ? source_y : 0);
+	record_copy(b.cb_out[slot], b.work, out >= 0 && out < b.out_count ? b.out_frames[out] : b.frames[slot], false, b.width, b.height, VK_NULL_HANDLE, VK_NULL_HANDLE, slot * 4);
 	VkSubmitInfo in = { VK_STRUCTURE_TYPE_SUBMIT_INFO }; in.commandBufferCount = 1; in.pCommandBuffers = &b.cb_in[slot];
 	submit(b.queue, 1, &in, VK_NULL_HANDLE);
 	apply_pending(b.swapchain_impl);
 	reshade::present_effect_runtime(b.swapchain_impl);
 	if (reshade::runtime *const rt = effect_runtime_of(b.swapchain_impl)) s_overlay_open = rt->overlay_visible();
 	if (const auto queue_impl = b.device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUEUE>(b.queue)) queue_impl->flush_immediate_command_list();
-	VkSubmitInfo out = { VK_STRUCTURE_TYPE_SUBMIT_INFO }; out.commandBufferCount = 1; out.pCommandBuffers = &b.cb_out[slot];
-	submit(b.queue, 1, &out, b.fence[slot]);
+	VkSubmitInfo outInfo = { VK_STRUCTURE_TYPE_SUBMIT_INFO }; outInfo.commandBufferCount = 1; outInfo.pCommandBuffers = &b.cb_out[slot];
+	submit(b.queue, 1, &outInfo, b.fence[slot]);
 	b.pending[slot] = true;
 }
 

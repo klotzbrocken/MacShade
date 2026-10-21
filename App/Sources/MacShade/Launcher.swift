@@ -328,7 +328,7 @@ final class Launcher: ObservableObject {
         }
         guard let out = try? FileHandle(forWritingTo: logURL) else { phase[id] = .failed(L("Log file is not writable.")); return }
         let p = Process(); p.executableURL = helper
-        p.arguments = ["--pid", String(pid), "--overlay", mac(game.overlayKey), "--effects", mac(game.effectsKey), "--screenshot", mac(game.screenshotKey)] + (game.captureHalfResolution ? ["--scale", "0.5"] : [])
+        p.arguments = ["--pid", String(pid), "--overlay", mac(game.overlayKey), "--effects", mac(game.effectsKey), "--screenshot", mac(game.screenshotKey)] + (game.captureHalfResolution ? ["--scale", "0.5"] : game.captureDynamic ? ["--dynamic"] : [])
         var env = ProcessInfo.processInfo.environment
         env["MACSHADE_LIB"] = Paths.dylib.path
         env["MACSHADE_MOLTENVK"] = Paths.dylib.deletingLastPathComponent().appendingPathComponent("libMoltenVK.dylib").path

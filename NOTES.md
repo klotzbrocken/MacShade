@@ -78,3 +78,26 @@ Report (Mac with a 1920x1080 display, macOS 15): the filtered picture was 96 % o
 - the geometry log ignores the moving window position (a sliding full-screen window used up the 12 lines), and logs the derived values;
 - half resolution is enlarged with a linear filter (nearest-neighbour looked like a stretched video).
 Verified with `MACSHADE_FILTER_FORCE_SIZE=1920x1080` on a 1000x632 window (reproduces the shrink: `contentScale 0.8544`, content at the left of the surface) and with a borderless window 44 pt above the screen. Not verified: the reporter's case itself (the window list and ScreenCaptureKit agreed on the height in every test here), and that the extra height is above the window.
+
+## Measured: ReShade directly on the game's frames (not worth it)
+The pipelined bridge copies each frame into a private work image and back (`vk_bridge_mac.cpp`, `record_copy`). `MACSHADE_BRIDGE_STATS=1` now also logs the GPU time of both copies (Vulkan timestamps): about 0.55 ms in + 0.6 ms out at 2940x1912, i.e. ~30 % of the bridge's GPU time with the light Look preset.
+Tried the alternative: the three IOSurface frames as ReShade's back buffers (ReShade supports several back buffers natively via `get_back_buffer_count`/`get_current_back_buffer_index`, so no runtime reset per frame). It worked, but the total GPU time was the same within noise (Look 3.9 vs 3.9 ms, Sharp-Only 3.3 vs 3.15 ms, Cinematic 3.9 vs 3.6-4.4 ms): ReShade is slower on an IOSurface-backed image than on a private optimal-tiled one and eats the saved copies. Not kept (the experiment was removed again). Measured on a battery-powered MacBook with a synthetic window, so only a rough result.
+
+## Screen filter: fewer copies, dynamic resolution
+GPU time per frame at 2940x1912 (Look preset, synthetic window, MacBook on battery; `MACSHADE_BRIDGE_STATS=1` shows the Vulkan side, the filter log line "GPU time of the Metal copies" the Metal side):
+- before: Metal blit in 0.9-1.1 ms + Vulkan copy in 0.55 + ReShade 2.4 + Vulkan copy out 0.6-0.9 + Metal blit out 1.2-1.8 = about 5.4-7 ms
+- now: the captured IOSurface is read by Vulkan itself (imported per surface id, held with its CMSampleBuffer until the slot's job is done; queueDepth 6) and ReShade's copy-out goes straight into the display surface (five surfaces imported once): about 3.4 ms, no Metal copy left. Same picture (marker test, crop offsets with the fake title bar still right).
+- `MACSHADE_FILTER_METAL_IN=1` brings back the Metal copy in, `MACSHADE_FILTER_METAL_COPY=1` both Metal copies (for comparison or if a system misbehaves).
+- Not verified: macOS versions other than the development one, real games, many window resizes in a row.
+
+Dynamic resolution (`--dynamic`, game page toggle "Dynamic resolution", off by default, ignored with half resolution): once a second the filter thread's busy share is measured. Above 0.55 for 3 s: one step down (100 -> 90 -> 75 %). A step up only when the estimated load of the higher step (busy x pixel ratio) is below 0.44 for 10 s; 6 s pause after each change. A change restarts the capture (short flicker). `MACSHADE_DYN_DOWN=<x>` moves the thresholds (test aid). The step down was exercised with lowered thresholds (100 -> 90 %, clean restart); the step up and the real thresholds were not tried under real GPU load.
+
+## Metal games (Mush8, a Switch emulator): slow with ReShade even with the effects off
+Measured with `MACSHADE_BRIDGE_STATS=1` ("Present rate of the game", "Bridge GPU split"), game started with the library injected, attract mode, 1920x1080 drawable (the reporter's was 2940x1846, 2.6x the pixels).
+Causes found:
+1. No bypass while only ReShade's FPS counter was on (MacShade turns `ShowFPS` on by default) and none at all in the synchronous Metal path: every frame went through two Metal copies plus two Vulkan copies for nothing. About 1.1 ms (Vulkan side) plus the Metal blits at 1080p, so roughly 5 ms or more at the reporter's size.
+2. A tutorial that was never started kept `runtime::is_idle` false for ever (`_tutorial_index == 0`), so a fresh instance never bypassed. Now ignored on macOS (`runtime.cpp`).
+3. The pipelined path presented with a plain `presentDrawable:` and so dropped the game's `presentDrawable:afterMinimumDuration:` pacing: the emulator then ran uncapped (about 100 fps in light scenes instead of its 50). Now the game's own call (plain, at time, after minimum duration) is used for the processed frame.
+4. While nothing is drawn the game's present is no longer deferred to the end of its command buffer (`pass_through_now`, `MACSHADE_NO_PASS_THROUGH=1` switches that off).
+Result in the same scenes: effects off 50 fps flat like without MacShade (before: 100 fps unpaced, or full copy cost); effects on 50 fps flat. With effects on the bridge still costs about 3.4 ms GPU per frame at 1080p (about 9 ms at 2940x1846) on top of the game: a GPU-bound game loses frame rate there. Next step would be what the screen filter does (let Vulkan read and write the drawable's IOSurface instead of the four copies, about 45 % less).
+Not tried: the effects hotkey inside this game (the key presses sent by automation did not arrive), heavy race scenes.

@@ -203,6 +203,16 @@ namespace
 	// MACSHADE_BRIDGE_STATS=1: average milliseconds per frame, logged every 300 frames
 	using Clock = std::chrono::steady_clock;
 	double ms(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); }
+	/// MACSHADE_BRIDGE_STATS: the rate at which the game itself hands over frames (measured at the present hooks, whatever happens to them afterwards)
+	void note_present()
+	{
+		static const bool on = std::getenv("MACSHADE_BRIDGE_STATS") != nullptr;
+		if (!on) return;
+		static unsigned n = 0; static Clock::time_point first{};
+		const auto now = Clock::now();
+		if (n == 0) first = now;
+		if (++n == 301) { reshade::log::message(reshade::log::level::info, "Present rate of the game: %.1f fps (%.2f ms per frame; bridge %s).", 300000.0 / ms(first, now), ms(first, now) / 300.0, bridge_enabled() ? "on" : "off"); n = 0; }
+	}
 	void note_frame(double process_ms)
 	{
 		static const bool on = std::getenv("MACSHADE_BRIDGE_STATS") != nullptr;
@@ -238,6 +248,7 @@ namespace
 				if (window != nil) macshade_set_window_override((__bridge void *)s.detached, (__bridge void *)window);
 				reshade::log::message(reshade::log::level::info, "Bridge: processing %lux%lu Metal drawables (pixel format %d).", (unsigned long)s.width, (unsigned long)s.height, (int)s.format);
 			}
+			{ bool fps_only = false; if (macshade_bridge_is_idle(&fps_only)) return; }   // effects off, menu closed: the game's frame stays as it is
 			static const bool debug = std::getenv("MACSHADE_BRIDGE_DEBUG") != nullptr;
 			const bool trace = debug && s.frame < 14;
 			if (trace) reshade::log::message(reshade::log::level::info, "Bridge: frame %u: copy in (thread %s)", s.frame, [NSThread isMainThread] ? "main" : "other");
@@ -311,7 +322,7 @@ namespace
 
 	/// Pipelined: copies the finished frame n into a ring slot (not awaited), hands frame n-1 to ReShade (not awaited) and shows frame n-2, processed, in this
 	/// drawable. The game's own frame is therefore not shown, but two frames later; in exchange nothing here ever waits for the GPU for long.
-	void process_pipelined(id<CAMetalDrawable> drawable, void (^present)(void))
+	void process_pipelined(id<CAMetalDrawable> drawable, void (^present)(void), void (^show)(id<MTLCommandBuffer>))
 	{
 		struct Stat { Clock::time_point t = Clock::now(); ~Stat() { note_frame(ms(t, Clock::now())); } } stat;
 		std::lock_guard<std::mutex> lock(s_mutex);
@@ -326,7 +337,7 @@ namespace
 				if (!setup_ring(target, drawable)) { s.failed = true; reshade::log::message(reshade::log::level::error, "Bridge: could not set up the Metal pipeline."); present(); return; }
 
 			bool fps_only = false;
-			if (macshade_bridge_is_idle(&fps_only) && !fps_only)   // nothing to show: leave the frame alone (there is no own FPS counter for Metal yet)
+			if (macshade_bridge_is_idle(&fps_only))   // nothing to show: leave the frame alone. (ReShade's FPS counter alone is not worth two full-size copies per frame, so it is hidden while the effects are off; the OpenGL bridge has its own cheap counter.)
 			{
 				if (s.n != 0) { macshade_bridge_pipeline_drain(); s.n = 0; }
 				present(); return;
@@ -360,7 +371,7 @@ namespace
 			macshade_bridge_pipeline_wait(old);
 			id<MTLCommandBuffer> out = encode_copy(s.ring_tex[old], target);
 			if (out == nil) { present(); return; }
-			s_orig_present(out, @selector(presentDrawable:), drawable);   // shown when the copy has finished
+			show(out);   // presented with the game's own call (plain, at a time, after a minimum duration: the game's frame pacing stays), when the copy has finished
 			[out commit];
 		}
 	}
@@ -371,34 +382,46 @@ namespace
 	PresentAtTimeFn s_orig_present_at = nullptr, s_orig_present_after = nullptr;
 
 	/// Present `drawable` after the command buffer completed and the frame was processed.
-	void present_later(id<MTLCommandBuffer> cb, id<MTLDrawable> drawable, void (^present)(void))
+	void present_later(id<MTLCommandBuffer> cb, id<MTLDrawable> drawable, void (^present)(void), void (^show)(id<MTLCommandBuffer>))
 	{
 		if (![drawable conformsToProtocol:@protocol(CAMetalDrawable)]) { present(); return; }
 		[cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-			if (pipeline_enabled()) process_pipelined((id<CAMetalDrawable>)drawable, present);
+			if (pipeline_enabled()) process_pipelined((id<CAMetalDrawable>)drawable, present, show);
 			else { process((id<CAMetalDrawable>)drawable); present(); }
 		}];
 	}
 
+	/// Nothing for ReShade to draw and nothing of ours in flight: the game's present is left exactly as the game made it (no waiting for the command buffer, no change of timing).
+	bool pass_through_now()
+	{
+		static const bool allowed = std::getenv("MACSHADE_NO_PASS_THROUGH") == nullptr;
+		if (!allowed || s_state.n != 0) return false;   // jobs in flight: the next processed frame drains them
+		bool fps_only = false;
+		return macshade_bridge_is_idle(&fps_only);
+	}
+
 	void hooked_present_drawable(id self, SEL cmd, id<MTLDrawable> drawable)
 	{
+		note_present();
 		macshade_frame_limit();
 		static bool logged = false;
 		if (!logged) { logged = true; reshade::log::message(reshade::log::level::info, "Bridge: first presentDrawable: on %s (app Vulkan: %d).", class_getName(object_getClass(self)), (int)g_app_uses_vulkan); }
-		if (!bridge_enabled()) { note_frame(0); s_orig_present(self, cmd, drawable); return; }
-		present_later(self, drawable, ^{ [drawable present]; });
+		if (!bridge_enabled() || pass_through_now()) { note_frame(0); s_orig_present(self, cmd, drawable); return; }
+		present_later(self, drawable, ^{ [drawable present]; }, ^(id<MTLCommandBuffer> out) { s_orig_present(out, @selector(presentDrawable:), drawable); });
 	}
 	void hooked_present_at(id self, SEL cmd, id<MTLDrawable> drawable, CFTimeInterval time)
 	{
+		note_present();
 		macshade_frame_limit();
-		if (!bridge_enabled()) { s_orig_present_at(self, cmd, drawable, time); return; }
-		present_later(self, drawable, ^{ [drawable presentAtTime:time]; });
+		if (!bridge_enabled() || pass_through_now()) { s_orig_present_at(self, cmd, drawable, time); return; }
+		present_later(self, drawable, ^{ [drawable presentAtTime:time]; }, ^(id<MTLCommandBuffer> out) { s_orig_present_at(out, @selector(presentDrawable:atTime:), drawable, time); });
 	}
 	void hooked_present_after(id self, SEL cmd, id<MTLDrawable> drawable, CFTimeInterval duration)
 	{
+		note_present();
 		macshade_frame_limit();
-		if (!bridge_enabled()) { s_orig_present_after(self, cmd, drawable, duration); return; }
-		present_later(self, drawable, ^{ [drawable presentAfterMinimumDuration:duration]; });
+		if (!bridge_enabled() || pass_through_now()) { s_orig_present_after(self, cmd, drawable, duration); return; }
+		present_later(self, drawable, ^{ [drawable presentAfterMinimumDuration:duration]; }, ^(id<MTLCommandBuffer> out) { s_orig_present_after(out, @selector(presentDrawable:afterMinimumDuration:), drawable, duration); });
 	}
 
 	// The game's scene depth: remember the depth attachment of the render passes, and while an effect needs depth keep it (many games discard it at the end of the pass)
@@ -454,7 +477,7 @@ namespace
 
 	__attribute__((constructor)) void install_metal_hooks()
 	{
-		if (std::getenv("MACSHADE_DISABLE_METAL_BRIDGE")) return;
+		if (std::getenv("MACSHADE_DISABLE_METAL_BRIDGE") && !std::getenv("MACSHADE_BRIDGE_STATS")) return;   // with the statistics on, the hooks stay as counters
 		@autoreleasepool
 		{
 			// concrete command buffer class of this GPU (an AGX... class on Apple silicon)
