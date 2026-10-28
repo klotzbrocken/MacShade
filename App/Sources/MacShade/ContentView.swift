@@ -101,7 +101,7 @@ struct ContentView: View {
                             .background(on ? Theme.raised : .clear, in: RoundedRectangle(cornerRadius: 12))
                         }.buttonStyle(.plain)
                         .contextMenu {
-                            if launcher.phase(of: g.id) == .running { Button("Quit game") { launcher.stop(g) } } else { Button("Start with ReShade") { launcher.start(g) } }
+                            if launcher.phase(of: g.id) == .running { Button("Quit game") { launcher.stop(g) } } else { Button("Start ReShade") { launcher.start(g) } }
                             Button("Rename game …") { renaming = g }
                             Divider()
                             Button("Remove from list", role: .destructive) { remove(g.id) }.disabled(launcher.isBusy(g.id))

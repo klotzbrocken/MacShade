@@ -159,6 +159,20 @@ final class Launcher: ObservableObject {
         return dst
     }
 
+    /// The previous start's ReShade.log is kept as ReShade.previous.log (for comparing two runs), the current one starts empty.
+    nonisolated static func archiveLog(_ instance: URL) {
+        let fm = FileManager.default, log = instance.appendingPathComponent("ReShade.log"), old = instance.appendingPathComponent("ReShade.previous.log")
+        try? fm.removeItem(at: old)
+        try? fm.moveItem(at: log, to: old)
+    }
+
+    /// MacShade's own environment for a game, minus the per-game switches: they are set from the game's profile below, so a value that MacShade itself was started with must not stay in force when the profile says off.
+    nonisolated static func inheritedEnvironment() -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        for key in ["MACSHADE_PIPELINE", "MACSHADE_PIPELINE_METAL", "MACSHADE_FPS_LIMIT"] { env[key] = nil }
+        return env
+    }
+
     // MARK: ReShade instance (per game configuration folder)
 
     /// Sets `key` in `[section]` of an INI file, creating section/key when needed. Other content (e.g. written by ReShade itself) is kept.
@@ -263,7 +277,7 @@ final class Launcher: ObservableObject {
             if let i = arguments.firstIndex(where: { $0.hasPrefix("+") }) { arguments.insert(contentsOf: flag, at: i) } else { arguments += flag }
         }
         let p = Process(); p.executableURL = exe; p.arguments = arguments
-        var env = ProcessInfo.processInfo.environment
+        var env = Launcher.inheritedEnvironment()
         env["DYLD_INSERT_LIBRARIES"] = Paths.dylib.path
         // prefer the MoltenVK the game ships: the game was built and tested against that version
         let bundle = exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -289,11 +303,20 @@ final class Launcher: ObservableObject {
                     : .failed(L("Exited (status %d). See the log.", Int(proc.terminationStatus)))
             }
         }
-        try? FileManager.default.removeItem(at: Paths.instances.appendingPathComponent(id.uuidString).appendingPathComponent("ReShade.log"))   // a failed injection must not show the previous start's path
+        Launcher.archiveLog(Paths.instances.appendingPathComponent(id.uuidString))   // a failed injection must not show the previous start's path
         observedPath[id] = nil; reshadeLog[id] = nil
         do { try p.run() } catch { phase[id] = .failed(L("Launch failed: %@", error.localizedDescription)); return }
         processes[id] = p; phase[id] = .running
         timers[id] = Timer.scheduledTimer(withTimeInterval: 0.7, repeats: true) { _ in Task { @MainActor in self.readLog(id, logURL) } }
+    }
+
+    /// Opens the game as it is, without ReShade (no copy, no injection), with the start parameters of the game.
+    func startPlain(_ game: Game) {
+        let id = game.id
+        let config = NSWorkspace.OpenConfiguration(); config.arguments = splitArguments(game.arguments); config.activates = true
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: game.sourcePath), configuration: config) { _, error in
+            if let error { Task { @MainActor in self.phase[id] = .failed(L("Launch failed: %@", error.localizedDescription)) } }
+        }
     }
 
     // MARK: screen filter mode
@@ -307,7 +330,7 @@ final class Launcher: ObservableObject {
         let instance = Launcher.prepareInstance(game)
         let logURL = Paths.logs.appendingPathComponent("\(id.uuidString).log")
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
-        try? FileManager.default.removeItem(at: instance.appendingPathComponent("ReShade.log")); observedPath[id] = nil
+        Launcher.archiveLog(instance); observedPath[id] = nil
         let appURL = URL(fileURLWithPath: game.sourcePath)
         let begin: (pid_t) -> Void = { pid in self.runHelper(game, helper: helper, pid: pid, instance: instance, logURL: logURL) }
         if let running = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL && !$0.isTerminated }) { begin(running.processIdentifier); return }
@@ -330,7 +353,7 @@ final class Launcher: ObservableObject {
         guard let out = try? FileHandle(forWritingTo: logURL) else { phase[id] = .failed(L("Log file is not writable.")); return }
         let p = Process(); p.executableURL = helper
         p.arguments = ["--pid", String(pid), "--overlay", mac(game.overlayKey), "--effects", mac(game.effectsKey), "--screenshot", mac(game.screenshotKey)] + (game.captureHalfResolution ? ["--scale", "0.5"] : game.captureDynamic ? ["--dynamic"] : [])
-        var env = ProcessInfo.processInfo.environment
+        var env = Launcher.inheritedEnvironment()
         env["MACSHADE_LIB"] = Paths.dylib.path
         env["MACSHADE_MOLTENVK"] = Paths.dylib.deletingLastPathComponent().appendingPathComponent("libMoltenVK.dylib").path
         env["MACSHADE_BASE"] = instance.path

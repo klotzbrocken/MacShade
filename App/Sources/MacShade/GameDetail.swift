@@ -14,7 +14,7 @@ struct WelcomeView: View {
             VStack(alignment: .leading, spacing: 18) {
                 step(1, "Add games", "We search for them, or you choose them yourself.")
                 step(2, "Choose a look", "Every game gets fitting looks. You can switch any time.")
-                step(3, "Start with ReShade", "In the game, a key opens the ReShade menu.")
+                step(3, "Start ReShade", "In the game, a key opens the ReShade menu.")
             }
             HStack(spacing: 12) {
                 Button("Search games automatically", action: find).buttonStyle(BigButton())
@@ -35,7 +35,7 @@ struct WelcomeView: View {
     }
 }
 
-enum GameTab: String, CaseIterable { case look = "Look", start = "Start", keys = "Keys", performance = "Performance", advanced = "Advanced" }
+enum GameTab: String, CaseIterable { case look = "Look", start = "Start", performance = "Performance", advanced = "Advanced" }
 
 struct UninstallButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
@@ -55,6 +55,7 @@ struct GameDetail: View {
     @State private var presets: [String] = []
     @State private var activePreset = ""
     @State private var confirmReset = false
+    @State private var expandedLook: String?
     @State private var copyUsage: Int64 = 0
     @State private var banner: NSImage?
     @State private var captureAllowed = CGPreflightScreenCaptureAccess()
@@ -81,15 +82,13 @@ struct GameDetail: View {
                     }.buttonStyle(.plain)
                 }
                 Spacer()
-                Rectangle().fill(Theme.line).frame(width: 1, height: 26).padding(.horizontal, 8)   // set apart from the tabs
                 startButton
-            }.padding(.horizontal, 36).padding(.top, 14)
+            }.padding(.horizontal, 36).padding(.top, 12)
             ScrollView {
                 Group {
                     switch tab {
                     case .look: lookTab
                     case .start: startTab
-                    case .keys: keysTab
                     case .performance: performanceTab
                     case .advanced: advancedTab
                     }
@@ -109,9 +108,9 @@ struct GameDetail: View {
 
     private var hero: some View {
         HStack(spacing: 22) {
-            GameTile(name: game.name, path: game.sourcePath, size: 76)
+            GameTile(name: game.name, path: game.sourcePath, size: 64)
             VStack(alignment: .leading, spacing: 8) {
-                Text(game.name).font(.system(size: 30, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.6)
+                Text(game.name).font(.system(size: 28, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.6)
                 Flow(spacing: 8) {
                     if let info {
                         Pill(text: info.api.shortLabel, color: info.api == .vulkan ? Theme.good : (info.api == .bridge ? Theme.accent : Theme.warn))
@@ -129,8 +128,8 @@ struct GameDetail: View {
                 if let info, !info.archs.contains("arm64"), !game.captureMode { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn) }
             }
             Spacer(minLength: 12)
-        }.padding(.horizontal, 36).padding(.top, 28).padding(.bottom, 22)
-        .frame(minHeight: banner == nil ? 0 : 210)
+        }.padding(.horizontal, 36).padding(.top, 24).padding(.bottom, 18)
+        .frame(minHeight: banner == nil ? 0 : 170)
         .background { bannerBackground }
         .overlay(alignment: .topTrailing) { bannerMenu.padding(10) }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in   // an image dropped on the header becomes the banner
@@ -142,13 +141,17 @@ struct GameDetail: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in captureAllowed = CGPreflightScreenCaptureAccess() }
     }
 
-    /// Start / quit button in the tab row.
+    /// Start buttons at the right end of the tab row: ReShade start, then the plain start.
     @ViewBuilder private var startButton: some View {
-        if phase == .running {
-            Button { launcher.stop(game) } label: { Label("Quit game", systemImage: "stop.fill").lineLimit(1).fixedSize() }.buttonStyle(BigButton(stop: true, compact: true))
-        } else {
-            Button { launcher.start(game) } label: { Label("Start with ReShade", systemImage: "play.fill").lineLimit(1).fixedSize() }
-                .buttonStyle(BigButton(compact: true)).disabled(busy || (info?.api == .staticVulkan && !game.captureMode)).keyboardShortcut(.return, modifiers: .command)
+        HStack(spacing: 8) {
+            if phase == .running {
+                Button { launcher.stop(game) } label: { Label("Quit game", systemImage: "stop.fill").lineLimit(1).fixedSize() }.buttonStyle(BigButton(stop: true, small: true))
+            } else {
+                Button { launcher.start(game) } label: { Label("Start ReShade", systemImage: "play.fill").lineLimit(1).fixedSize() }
+                    .buttonStyle(BigButton(small: true)).disabled(busy || (info?.api == .staticVulkan && !game.captureMode)).keyboardShortcut(.return, modifiers: .command)
+                Button { launcher.startPlain(game) } label: { Text("Normal start").lineLimit(1).fixedSize() }
+                    .buttonStyle(QuietButton()).disabled(busy).help(L("Starts the game without ReShade, as if you had opened it yourself."))
+            }
         }
     }
 
@@ -205,57 +208,48 @@ struct GameDetail: View {
 
     private var lookTab: some View {
         let builtIn = Presets.bundledNames(for: game)
-        return VStack(alignment: .leading, spacing: 20) {
+        return VStack(alignment: .leading, spacing: 18) {
             if let b = PortAdvice.better(for: game.name) {
-                Card {
-                    HStack(alignment: .center, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(L("Better experience: %@", b.name)).font(.system(size: 15, weight: .bold))
-                            Text(b.why).font(.system(size: 13)).foregroundStyle(Theme.muted)
-                        }
-                        Spacer()
-                        Link("Open page", destination: b.url).buttonStyle(.plain).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent)
-                    }
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "sparkles").foregroundStyle(Theme.accent)
+                    (Text(L("Better experience: %@", b.name)).fontWeight(.bold) + Text("  ·  " + b.why).foregroundColor(Theme.muted)).font(.system(size: 13)).lineLimit(2)
+                    Spacer(minLength: 8)
+                    Link("Open page", destination: b.url).buttonStyle(.plain).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            }
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Choose your look").font(.system(size: 20, weight: .heavy))
+                    Text("Only one look is active per game. It is loaded at the next start; in the game you can change it live.").font(.system(size: 13)).foregroundStyle(Theme.muted)
+                    Label(L("In the game: %@ opens ReShade", game.overlayKey.label), systemImage: "keyboard").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.muted)
+                }
+                Spacer(minLength: 12)
+                Menu {
+                    Button("Import preset …") { importPreset() }
+                    Button("Show folder") { Launcher.prepareInstance(game); NSWorkspace.shared.open(instance) }
+                    Button("Restore default preset") { Presets.restoreDefault(for: game); presetMessage = L("Default preset restored and selected."); refreshPresets() }
+                    Divider()
+                    Button("Delete selected preset") { Presets.delete(activePreset, for: game); presetMessage = L("Preset deleted."); refreshPresets() }
+                        .disabled(activePreset.isEmpty || activePreset == Presets.defaultName)
+                    Button("Reset all presets …") { confirmReset = true }
+                } label: { Label("More …", systemImage: "ellipsis.circle").font(.system(size: 13, weight: .semibold)) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().disabled(phase == .running)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(presets.enumerated()), id: \.element) { index, name in
+                    if index > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
+                    LookCard(game: game, name: name, isActive: name == activePreset,
+                             kind: name == Presets.defaultName ? L("Default") : (builtIn.contains(name) ? L("Included") : L("Own")),
+                             locked: phase == .running, expanded: $expandedLook, onSelect: { select(name) },
+                             onChange: { presetMessage = $0; refreshPresets() })
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
-                SectionTitle("Choose your look", "The chosen look is loaded at the next start. In the game you can change it live.")
-                Text(L("In the game: %@ opens ReShade", game.overlayKey.label)).font(.system(size: 15, weight: .bold))
-            }
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 16)], spacing: 16) {
-                ForEach(presets, id: \.self) { name in
-                    let on = name == activePreset
-                    Button { select(name) } label: {
-                        VStack(alignment: .leading, spacing: 12) {
-                            HStack {
-                                Text(Presets.displayName(name)).font(.system(size: 16, weight: .bold)).lineLimit(1)
-                                Spacer()
-                                Pill(text: name == Presets.defaultName ? L("Default") : (builtIn.contains(name) ? L("Included") : L("Own")), color: on ? Theme.accent : Theme.muted)
-                            }
-                            let parts = Presets.explain(name, for: game)
-                            VStack(alignment: .leading, spacing: 5) {
-                                ForEach(Array(parts.prefix(6).enumerated()), id: \.offset) { _, part in
-                                    (Text(part.title).fontWeight(.semibold).foregroundColor(Theme.text) + Text(part.detail.isEmpty ? "" : " · " + part.detail).foregroundColor(Theme.muted))
-                                        .font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
-                                }
-                                if parts.count > 6 { Text("+\(parts.count - 6)").font(.system(size: 12.5)).foregroundStyle(Theme.muted) }
-                            }
-                        }
-                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(on ? Color(hex: 0x182034) : Theme.card, in: RoundedRectangle(cornerRadius: 16))
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(on ? Theme.accent : Theme.line, lineWidth: 1.5))
-                    }.buttonStyle(.plain).disabled(busy)
-                }
-            }
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line, lineWidth: 1))
             if let presetMessage { Text(presetMessage).font(.caption).foregroundStyle(Theme.good) }
-            Flow {
-                Button("Import preset …") { importPreset() }.buttonStyle(SoftButton())
-                Button("Show folder") { Launcher.prepareInstance(game); NSWorkspace.shared.open(instance) }.buttonStyle(SoftButton())
-                Button("Restore default preset") { Presets.restoreDefault(for: game); presetMessage = L("Default preset restored and selected."); refreshPresets() }.buttonStyle(SoftButton())
-                Button("Delete selected preset") { Presets.delete(activePreset, for: game); presetMessage = L("Preset deleted."); refreshPresets() }
-                    .buttonStyle(SoftButton(tint: Theme.bad)).disabled(activePreset.isEmpty || activePreset == Presets.defaultName)
-                Button("Reset all presets …") { confirmReset = true }.buttonStyle(SoftButton(tint: Theme.bad))
-            }.disabled(phase == .running)
         }
         .confirmationDialog(L("Reset all presets of “%@”?", game.name), isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) { Presets.resetAll(for: game); presetMessage = L("All presets were reset to the default."); refreshPresets() }
@@ -301,7 +295,7 @@ struct GameDetail: View {
 
     // MARK: keys
 
-    private var keysTab: some View {
+    private var keysSection: some View {
         VStack(alignment: .leading, spacing: 20) {
             SectionTitle("Hotkeys in the game", "Click a key, then press the combination you want.")
             Card {
@@ -378,6 +372,7 @@ struct GameDetail: View {
                 Text("Name").font(.system(size: 15, weight: .bold))
                 TextField("Name", text: $game.name).textFieldStyle(.roundedBorder).frame(maxWidth: 360)
             }
+            keysSection
             HStack(alignment: .top, spacing: 16) {
                 Card {
                     Text("Game copy").font(.system(size: 15, weight: .bold))
@@ -418,6 +413,7 @@ struct GameDetail: View {
             }
             Card {
                 Text("Uninstall game").font(.system(size: 15, weight: .bold))
+                Label("Warning: this deletes the whole game, not only its entry in MacShade.", systemImage: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .bold)).foregroundStyle(Theme.bad)
                 Text("Moves the game, its data folders from the start parameters, the game copy and the MacShade settings for it to the Trash.").font(.system(size: 13)).foregroundStyle(Theme.muted)
                 Button { uninstallStep = 1 } label: { Label("Uninstall game …", systemImage: "trash") }
                     .buttonStyle(UninstallButtonStyle()).disabled(busy)
@@ -428,7 +424,7 @@ struct GameDetail: View {
         .alert(L("Uninstall “%@”?", game.name), isPresented: Binding(get: { uninstallStep == 1 }, set: { if !$0 && uninstallStep == 1 { uninstallStep = 0 } })) {
             Button(L("Cancel"), role: .cancel) { uninstallStep = 0 }
             Button(L("Continue …"), role: .destructive) { uninstallStep = 2 }
-        } message: { Text(uninstallTargets.map(\.path).joined(separator: "\n")) }
+        } message: { Text(L("The whole game will be deleted, not only removed from MacShade. These items go to the Trash:") + "\n\n" + uninstallTargets.map(\.path).joined(separator: "\n")) }
         .alert(L("Really uninstall “%@”?", game.name), isPresented: Binding(get: { uninstallStep == 2 }, set: { if !$0 && uninstallStep == 2 { uninstallStep = 0 } })) {
             Button(L("Cancel"), role: .cancel) { uninstallStep = 0 }
             Button(L("Move to Trash"), role: .destructive) { uninstall() }

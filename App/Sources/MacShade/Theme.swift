@@ -60,12 +60,24 @@ struct SoftButton: ButtonStyle {
 struct BigButton: ButtonStyle {
     var stop = false
     var compact = false
+    var small = false   // the row of tabs: as high as a tab
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.system(size: compact ? 14 : 17, weight: .heavy))
+        let radius: CGFloat = small ? 9 : (compact ? 10 : 14)
+        configuration.label.font(.system(size: small ? 13 : (compact ? 14 : 17), weight: small ? .bold : .heavy))
             .foregroundStyle(stop ? Color(hex: 0xFFB4B4) : Theme.onAccent)
-            .padding(.horizontal, compact ? 18 : 30).padding(.vertical, compact ? 9 : 15)
-            .background(stop ? Color(hex: 0x2A1518) : Theme.accent.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: compact ? 10 : 14))
-            .overlay(RoundedRectangle(cornerRadius: compact ? 10 : 14).stroke(stop ? Theme.bad : .clear, lineWidth: 1.5))
+            .padding(.horizontal, small ? 13 : (compact ? 18 : 30)).padding(.vertical, small ? 7 : (compact ? 9 : 15))
+            .background(stop ? Color(hex: 0x2A1518) : Theme.accent.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).stroke(stop ? Theme.bad : .clear, lineWidth: 1.5))
+    }
+}
+
+/// Quiet outlined button next to the main one (same height as `BigButton(small:)`).
+struct QuietButton: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.text)
+            .padding(.horizontal, 13).padding(.vertical, 7)
+            .background(configuration.isPressed ? Theme.raised : Theme.card.opacity(0.8), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Theme.lineStrong))
     }
 }
 
