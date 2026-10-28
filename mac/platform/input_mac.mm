@@ -178,7 +178,6 @@ namespace
 
 	__attribute__((constructor)) void install_event_hook()
 	{
-		if (std::getenv("MACSHADE_DISABLE_INPUT")) return;
 		Method method = class_getInstanceMethod([NSApplication class], @selector(sendEvent:));
 		if (method == nullptr) return;
 		s_original_send_event = reinterpret_cast<void (*)(id, SEL, NSEvent *)>(method_getImplementation(method));

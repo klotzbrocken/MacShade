@@ -203,25 +203,26 @@ namespace
 	// MACSHADE_BRIDGE_STATS=1: average milliseconds per frame, logged every 300 frames
 	using Clock = std::chrono::steady_clock;
 	double ms(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); }
-	/// MACSHADE_BRIDGE_STATS: the rate at which the game itself hands over frames (measured at the present hooks, whatever happens to them afterwards)
-	void note_present()
+	/// Always on (one log line per 300 frames): the rate at which the game hands over frames and how many of them the bridge left untouched (effects off), to see in a log what the bridge did
+	void note_present(bool passed_through)
 	{
-		static const bool on = std::getenv("MACSHADE_BRIDGE_STATS") != nullptr;
-		if (!on) return;
-		static unsigned n = 0; static Clock::time_point first{};
+		static unsigned n = 0, passed = 0; static Clock::time_point first{};
 		const auto now = Clock::now();
 		if (n == 0) first = now;
-		if (++n == 301) { reshade::log::message(reshade::log::level::info, "Present rate of the game: %.1f fps (%.2f ms per frame; bridge %s).", 300000.0 / ms(first, now), ms(first, now) / 300.0, bridge_enabled() ? "on" : "off"); n = 0; }
+		if (passed_through) ++passed;
+		if (++n == 301)
+		{
+			reshade::log::message(reshade::log::level::info, "Present rate of the game: %.1f fps (%.2f ms per frame); %u%% of the frames passed through untouched%s.", 300000.0 / ms(first, now), ms(first, now) / 300.0, passed * 100 / 301, bridge_enabled() ? "" : " (bridge off)");
+			n = 0; passed = 0;
+		}
 	}
 	void note_frame(double process_ms)
 	{
 		static const bool on = std::getenv("MACSHADE_BRIDGE_STATS") != nullptr;
 		if (!on) return;
-		static double total = 0, interval = 0; static unsigned n = 0; static Clock::time_point last{};
-		const auto now = Clock::now();
-		if (last.time_since_epoch().count() != 0) interval += ms(last, now);
-		last = now; total += process_ms;
-		if (++n == 300) { reshade::log::message(reshade::log::level::info, "Bridge stats (Metal, ms/frame): frame interval %.2f (%.0f fps) | process (copy in + ReShade + copy out) %.2f", interval / n, 1000.0 * n / interval, total / n); total = interval = 0; n = 0; }
+		static double total = 0; static unsigned n = 0;
+		total += process_ms;
+		if (++n == 300) { reshade::log::message(reshade::log::level::info, "Bridge stats (Metal): process (copy in + ReShade + copy out) %.2f ms/frame", total / n); total = 0; n = 0; }
 	}
 
 	/// Runs ReShade over the finished frame in `drawable`. Called once the game's command buffer has completed.
@@ -387,6 +388,7 @@ namespace
 	{
 		if (![drawable conformsToProtocol:@protocol(CAMetalDrawable)]) { present(); return; }
 		[cb addCompletedHandler:^(id<MTLCommandBuffer>) {
+			if (((id<CAMetalDrawable>)drawable).texture.framebufferOnly) { present(); return; }   // fetched while the layer was back in its display-optimised state: nothing to copy from
 			if (pipeline_enabled()) process_pipelined((id<CAMetalDrawable>)drawable, present, show);
 			else { process((id<CAMetalDrawable>)drawable); present(); }
 		}];
@@ -403,25 +405,28 @@ namespace
 
 	void hooked_present_drawable(id self, SEL cmd, id<MTLDrawable> drawable)
 	{
-		note_present();
+		const bool pass = !bridge_enabled() || pass_through_now();
+		note_present(pass);
 		macshade_frame_limit();
 		static bool logged = false;
 		if (!logged) { logged = true; reshade::log::message(reshade::log::level::info, "Bridge: first presentDrawable: on %s (app Vulkan: %d).", class_getName(object_getClass(self)), (int)g_app_uses_vulkan); }
-		if (!bridge_enabled() || pass_through_now()) { note_frame(0); s_orig_present(self, cmd, drawable); return; }
+		if (pass) { note_frame(0); s_orig_present(self, cmd, drawable); return; }
 		present_later(self, drawable, ^{ [drawable present]; }, ^(id<MTLCommandBuffer> out) { s_orig_present(out, @selector(presentDrawable:), drawable); });
 	}
 	void hooked_present_at(id self, SEL cmd, id<MTLDrawable> drawable, CFTimeInterval time)
 	{
-		note_present();
+		const bool pass = !bridge_enabled() || pass_through_now();
+		note_present(pass);
 		macshade_frame_limit();
-		if (!bridge_enabled() || pass_through_now()) { s_orig_present_at(self, cmd, drawable, time); return; }
+		if (pass) { s_orig_present_at(self, cmd, drawable, time); return; }
 		present_later(self, drawable, ^{ [drawable presentAtTime:time]; }, ^(id<MTLCommandBuffer> out) { s_orig_present_at(out, @selector(presentDrawable:atTime:), drawable, time); });
 	}
 	void hooked_present_after(id self, SEL cmd, id<MTLDrawable> drawable, CFTimeInterval duration)
 	{
-		note_present();
+		const bool pass = !bridge_enabled() || pass_through_now();
+		note_present(pass);
 		macshade_frame_limit();
-		if (!bridge_enabled() || pass_through_now()) { s_orig_present_after(self, cmd, drawable, duration); return; }
+		if (pass) { s_orig_present_after(self, cmd, drawable, duration); return; }
 		present_later(self, drawable, ^{ [drawable presentAfterMinimumDuration:duration]; }, ^(id<MTLCommandBuffer> out) { s_orig_present_after(out, @selector(presentDrawable:afterMinimumDuration:), drawable, duration); });
 	}
 
@@ -447,7 +452,14 @@ namespace
 	id (*s_orig_next_drawable)(id, SEL) = nullptr;
 	id hooked_next_drawable(id self, SEL cmd)
 	{
-		if (bridge_enabled() && [(CAMetalLayer *)self framebufferOnly]) [(CAMetalLayer *)self setFramebufferOnly:NO]; // the drawable has to be readable
+		if (bridge_enabled())
+		{
+			// the drawable has to be readable while ReShade works on it; while it does not (effects off for a few seconds) the layer goes back to what the game had chosen (Core Animation can optimise display)
+			static __weak CAMetalLayer *changed = nil; static int idle_frames = 0;
+			CAMetalLayer *layer = (CAMetalLayer *)self;
+			if (pass_through_now()) { if (++idle_frames >= 180 && changed == layer && !layer.framebufferOnly) layer.framebufferOnly = YES; }
+			else { idle_frames = 0; if (layer.framebufferOnly) { layer.framebufferOnly = NO; changed = layer; } }
+		}
 		return s_orig_next_drawable(self, cmd);
 	}
 

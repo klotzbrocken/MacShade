@@ -98,7 +98,7 @@ keychain profile exists — notarizes and staples it. One-time setup: `xcrun not
 - `mac/platform/` – the macOS layer: start-up and paths, Vulkan loader emulation, input (NSEvent), OpenGL/Metal bridge, resources, localisation.
 - `mac/compat/` – Win32 shims so the unmodified ReShade code compiles on macOS.
 - `App/` – SwiftUI launcher (`Sources/`), presets, effect collections, translations (`gen_strings.py`).
-- `work/`, `test_game.sh` – developer tools: window screenshots, simulated key/mouse events, per-effect cost measurements. They are tied to the author's setup (paths, game list) and are shown for reference.
+- `work/` – developer scripts (`check_games.sh`, `winid2.swift` for window screenshots). They are tied to the author's setup (paths, game list) and are shown for reference.
 - [NOTES.md](NOTES.md) – architecture notes and pitfalls.
 
 ## Debug environment variables

@@ -29,7 +29,7 @@ The unmodified ReShade 6.8 core (`reshade/`) runs as `libmacshade.dylib` inside 
 - A game seems to hang at start: an unanswered macOS permission prompt (e.g. screen recording) can block it.
 - Objective-C objects in globals without ARC → use-after-free (the bridge files are built with `-fobjc-arc`).
 - Hardened runtime blocks injection → always run an ad-hoc signed copy; some games (Quetoo) restore their original signature, so the launcher re-checks before every start.
-- Tests: never kill a game you did not start yourself (`work/fps_test.sh` only kills its own process and refuses to run while the game is already running).
+- Tests: never kill a game you did not start yourself.
   Never take full-screen screenshots (private content): use `work/winid2.swift <name> <pid>` + `screencapture -l`.
 - lldb attach/launch hangs on this setup and leaves `debugserver` processes → use `MACSHADE_CRASH_TRACE` and the crash reports in `~/Library/Logs/DiagnosticReports`.
 - `CRT.fx` (SweetFX) with *Curvature* on renders black through MoltenVK — the Retro presets keep curvature off.
@@ -102,3 +102,4 @@ Causes found:
 Result in the same scenes: effects off 50 fps flat like without MacShade (before: 100 fps unpaced, or full copy cost); effects on 50 fps flat. With effects on the bridge still costs about 3.4 ms GPU per frame at 1080p (about 9 ms at 2940x1846) on top of the game: a GPU-bound game loses frame rate there. Next step would be what the screen filter does (let Vulkan read and write the drawable's IOSurface instead of the four copies, about 45 % less).
 Not tried: the effects hotkey inside this game (the key presses sent by automation did not arrive), heavy race scenes.
 Metal games are no longer pipelined by default (`Game.pipelineMetal`, env `MACSHADE_PIPELINE_METAL`): two frames more delay were noticeable (racing/action) and the game keeps its own pacing; OpenGL keeps `pipeline` (default on). Metal depth buffers exist only in the pipelined mode, so effects that need depth need the second toggle. Checked with Mush8: default = synchronous Metal bridge, 50 fps flat; with the toggle = pipelined, 50 fps flat.
+Metal bridge, idle: the layer's `framebufferOnly` (set to NO so ReShade can read drawables) goes back to YES after about 180 frames of pass-through, so Core Animation can optimise display again; a frame fetched in that state is presented without processing. Mush8 (new build, 2940x1846, effects off, 3 runs each): GPU utilisation 46.7 % with this vs about 50 % (46.5-54.2) before vs 45.9 % without MacShade; the rest is noise. Not verified in a real race.

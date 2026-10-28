@@ -1,27 +1,12 @@
-// Debug aid: MACSHADE_TRACE_THROW=1 prints a backtrace whenever a C++ exception is thrown from a library (e.g. libc++).
+// Debug aid: MACSHADE_CRASH_TRACE (below).
 #include <cstdio>
 #include <cstdlib>
 #include <execinfo.h>
 #include <unistd.h>
 
-extern "C" void __cxa_throw(void *, void *, void (*)(void *));
-
 #define INTERPOSE(replacement, replacee) \
 	__attribute__((used)) static struct { const void *r; const void *o; } _interpose_##replacee \
 	__attribute__((section("__DATA,__interpose"))) = { (const void *)(unsigned long)&replacement, (const void *)(unsigned long)&replacee }
-
-static void my_cxa_throw(void *exception, void *type, void (*dest)(void *))
-{
-	static const bool trace = std::getenv("MACSHADE_TRACE_THROW") != nullptr;
-	if (trace)
-	{
-		void *frames[40]; const int n = backtrace(frames, 40);
-		dprintf(2, "[macshade] C++ exception thrown:\n");
-		backtrace_symbols_fd(frames, n, 2);
-	}
-	__cxa_throw(exception, type, dest);
-}
-INTERPOSE(my_cxa_throw, __cxa_throw);
 
 // MACSHADE_CRASH_TRACE=1: print a backtrace on SIGSEGV/SIGBUS even when the game installs its own crash handler (the game's handler still runs afterwards).
 #include <signal.h>

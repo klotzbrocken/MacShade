@@ -200,7 +200,6 @@ static PFN_vkVoidFunction VKAPI_CALL app_gipa(VkInstance instance, const char *n
 {
 	if (!name) return nullptr;
 	ensure_mvk();
-	if (trace_enabled() && std::getenv("MACSHADE_TRACE_GIPA")) std::fprintf(stderr, "[macshade] gipa(%p, %s)\n", (void *)instance, name);
 	if (!std::strcmp(name, "vkGetInstanceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(&app_gipa);
 	if (!std::strcmp(name, "vkGetDeviceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(&app_gdpa);
 	if (!std::strcmp(name, "vkCreateInstance")) return reinterpret_cast<PFN_vkVoidFunction>(&app_CreateInstance);
@@ -214,7 +213,6 @@ static PFN_vkVoidFunction VKAPI_CALL app_gipa(VkInstance instance, const char *n
 static PFN_vkVoidFunction VKAPI_CALL app_gdpa(VkDevice device, const char *name)
 {
 	if (!name) return nullptr;
-	if (trace_enabled() && std::getenv("MACSHADE_TRACE_GIPA")) std::fprintf(stderr, "[macshade] gdpa(%p, %s)\n", (void *)device, name);
 	if (!std::strcmp(name, "vkGetDeviceProcAddr")) return reinterpret_cast<PFN_vkVoidFunction>(&app_gdpa);
 	return rs_vkGetDeviceProcAddr(device, name);
 }

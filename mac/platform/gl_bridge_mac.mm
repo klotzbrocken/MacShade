@@ -237,7 +237,6 @@ namespace
 		if (scissor) glEnable(GL_SCISSOR_TEST); if (srgb) glEnable(GL_FRAMEBUFFER_SRGB); if (blend) glEnable(GL_BLEND);
 	}
 
-	void dump_surface(IOSurfaceRef surface, const char *name);
 	thread_local bool t_in_flush = false;
 
 	/// Runs ReShade on the frame that is about to be presented (does nothing when the bridge is off or unavailable).
@@ -461,8 +460,6 @@ namespace
 
 	void process_frame(CGLContextObj ctx)
 	{
-		static const bool no_vsync = std::getenv("MACSHADE_NO_VSYNC") != nullptr;   // benchmarking only
-		if (no_vsync && ctx) { GLint zero = 0; CGLSetParameter(ctx, kCGLCPSwapInterval, &zero); }
 		s_restore_fbo = 0;
 		static unsigned s_calls = 0;
 		if (++s_calls == 1 || s_calls % 600 == 0) reshade::log::message(reshade::log::level::info, "Bridge: frame hook call #%u (ctx %p).", s_calls, ctx);
@@ -535,13 +532,11 @@ namespace
 			if (sample_buffers > 0) { blit(0, s.resolve_fbo, s.width, s.height, false); blit(s.resolve_fbo, s.fbo, s.width, s.height, true); }
 			else blit(0, s.fbo, s.width, s.height);   // game frame -> IOSurface (flipped, so that row 0 is the top row)
 			t_pre = Clock::now();
-				{ static const bool flush_only = std::getenv("MACSHADE_GL_FLUSH_ONLY") != nullptr; if (flush_only) glFlush(); else glFinish(); }
+				glFinish();
 				t1 = Clock::now();
-			if (s.frame == 30) dump_surface(s.surface, "frame_in");
 			t_rs0 = Clock::now();
 				processed = macshade_bridge_process(s.width, s.height, (__bridge void *)s.layer, s.surface);
 			t2 = Clock::now();
-				if (s.frame == 30) dump_surface(s.surface, "frame_out");
 			if (processed) { if (sample_buffers > 0) { blit(s.fbo, s.resolve_fbo, s.width, s.height, true); blit(s.resolve_fbo, 0, s.width, s.height, false); } else blit(s.fbo, 0, s.width, s.height); } // result -> screen
 			else s.failed = true;
 			}
@@ -578,24 +573,6 @@ namespace
 		GLenum buf = (GLenum)draw_buffer; glDrawBuffers(1, &buf); glColorMask(mask[0], mask[1], mask[2], mask[3]);
 		if (scissor) glEnable(GL_SCISSOR_TEST); if (srgb) glEnable(GL_FRAMEBUFFER_SRGB); if (blend) glEnable(GL_BLEND);
 		s_restore_fbo = 0;
-	}
-
-	/// MACSHADE_BRIDGE_DUMP=<dir>: writes frame 30 (as read from the game, and after ReShade) as PNG files, to see what the bridge sees.
-	void dump_surface(IOSurfaceRef surface, const char *name)
-	{
-		const char *dir = std::getenv("MACSHADE_BRIDGE_DUMP");
-		if (!dir) return;
-		IOSurfaceLock(surface, kIOSurfaceLockReadOnly, nullptr);
-		CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-		CGContextRef c = CGBitmapContextCreate(IOSurfaceGetBaseAddress(surface), IOSurfaceGetWidth(surface), IOSurfaceGetHeight(surface), 8, IOSurfaceGetBytesPerRow(surface), cs, kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little);
-		if (CGImageRef image = CGBitmapContextCreateImage(c))
-		{
-			NSString *path = [NSString stringWithFormat:@"%s/%s.png", dir, name];
-			CGImageDestinationRef d = CGImageDestinationCreateWithURL((__bridge CFURLRef)[NSURL fileURLWithPath:path], CFSTR("public.png"), 1, nullptr);
-			CGImageDestinationAddImage(d, image, nullptr); CGImageDestinationFinalize(d); CFRelease(d); CGImageRelease(image);
-		}
-		CGContextRelease(c); CGColorSpaceRelease(cs);
-		IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, nullptr);
 	}
 
 	void note_flush(Clock::time_point flush_start)
