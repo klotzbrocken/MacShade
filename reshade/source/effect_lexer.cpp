@@ -4,6 +4,7 @@
  */
 
 #include "effect_lexer.hpp"
+#include "effect_cnumber.hpp"
 #include <cstdlib>
 #include <string>
 #include <cassert>
@@ -1215,7 +1216,7 @@ void reshadefx::lexer::parse_numeric_literal(token &tok) const
 		tok.literal_as_float = exponent_negative ? mantissa / static_cast<float>(e) : mantissa * static_cast<float>(e);
 #elif defined(__APPLE__)
 		// std::from_chars for floating point needs macOS 26; strtof gives the same value for a literal and works on every supported macOS
-		{ const std::string text(begin, end); tok.literal_as_float = std::strtof(text.c_str(), nullptr); }
+		{ const std::string text(begin, end); tok.literal_as_float = c_strtof(text.c_str()); }
 #else
 		std::from_chars(begin, end, tok.literal_as_float);
 #endif

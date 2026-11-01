@@ -270,12 +270,7 @@ final class Launcher: ObservableObject {
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
         guard let out = try? FileHandle(forWritingTo: logURL) else { phase[game.id] = .failed(L("Log file is not writable.")); return }
 
-        var arguments = splitArguments(game.arguments)
-        if game.suppressRestoreDialog {
-            // Quake-style engines (Q3, Quake3e ...) join everything after a "+command" into that command: put the flag in front of the first "+" or it ends up in the last value
-            let flag = ["-ApplePersistenceIgnoreState", "YES"]
-            if let i = arguments.firstIndex(where: { $0.hasPrefix("+") }) { arguments.insert(contentsOf: flag, at: i) } else { arguments += flag }
-        }
+        let arguments = launchArguments(game)
         let p = Process(); p.executableURL = exe; p.arguments = arguments
         var env = Launcher.inheritedEnvironment()
         env["DYLD_INSERT_LIBRARIES"] = Paths.dylib.path
@@ -319,6 +314,17 @@ final class Launcher: ObservableObject {
         }
     }
 
+    /// The game's start parameters plus, if wanted, the flag that stops macOS from asking to restore windows.
+    private func launchArguments(_ game: Game) -> [String] {
+        var arguments = splitArguments(game.arguments)
+        if game.suppressRestoreDialog {
+            // Quake-style engines (Q3, Quake3e ...) join everything after a "+command" into that command: put the flag in front of the first "+" or it ends up in the last value
+            let flag = ["-ApplePersistenceIgnoreState", "YES"]
+            if let i = arguments.firstIndex(where: { $0.hasPrefix("+") }) { arguments.insert(contentsOf: flag, at: i) } else { arguments += flag }
+        }
+        return arguments
+    }
+
     // MARK: screen filter mode
     /// Starts the game normally (no copy, no injection) and the helper that filters its window.
     private func startFiltered(_ game: Game) {
@@ -334,8 +340,7 @@ final class Launcher: ObservableObject {
         let appURL = URL(fileURLWithPath: game.sourcePath)
         let begin: (pid_t) -> Void = { pid in self.runHelper(game, helper: helper, pid: pid, instance: instance, logURL: logURL) }
         if let running = NSWorkspace.shared.runningApplications.first(where: { $0.bundleURL?.standardizedFileURL == appURL.standardizedFileURL && !$0.isTerminated }) { begin(running.processIdentifier); return }
-        var arguments = splitArguments(game.arguments)
-        if game.suppressRestoreDialog { arguments += ["-ApplePersistenceIgnoreState", "YES"] }
+        let arguments = launchArguments(game)
         let config = NSWorkspace.OpenConfiguration(); config.arguments = arguments; config.activates = true
         NSWorkspace.shared.openApplication(at: appURL, configuration: config) { app, error in
             Task { @MainActor in

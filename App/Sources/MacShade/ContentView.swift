@@ -13,7 +13,12 @@ struct ContentView: View {
     @AppStorage("sidebarWidth") private var sidebarWidth = 264.0
     @State private var dragStartWidth: Double?
 
+    private var selectedGame: Game? { showHub || showSettings ? nil : store.games.first { $0.id == selection } }
+
     var body: some View {
+        VStack(spacing: 0) {
+        GameBanner(game: selectedGame, title: showHub ? L("Game Hub") : (showSettings ? L("Settings") : nil)).id(selectedGame?.id)
+        Rectangle().fill(Theme.line).frame(height: 1)
         HStack(spacing: 0) {
             sidebar
             ZStack { Rectangle().fill(Theme.line).frame(width: 1) }   // the sidebar's edge: draggable, 9 pt wide hit area
@@ -42,6 +47,7 @@ struct ContentView: View {
                     Text("Select a game").foregroundStyle(Theme.muted).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }.frame(maxWidth: .infinity)
+        }
         }
         .background(Theme.bg).foregroundStyle(Theme.text).preferredColorScheme(.dark)
         .onAppear { if selection == nil { selection = store.games.first?.id } }
@@ -81,10 +87,6 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 10) {
-                Image(nsImage: NSApplication.shared.applicationIconImage).resizable().frame(width: 32, height: 32)
-                Text("MacShade").font(.system(size: 17, weight: .heavy))
-            }.padding(.horizontal, 6)
             Text("MY GAMES").font(.system(size: 11, weight: .bold)).tracking(1).foregroundStyle(Theme.muted).padding(.horizontal, 10)
             ScrollView {
                 VStack(spacing: 2) {
@@ -92,12 +94,12 @@ struct ContentView: View {
                         let on = g.id == selection && !showSettings && !showHub
                         Button { selection = g.id; showSettings = false; showHub = false } label: {
                             HStack(spacing: 12) {
-                                GameTile(name: g.name, path: g.sourcePath, size: 36)
+                                GameTile(name: g.name, path: g.sourcePath, size: 48)
                                 Text(g.name).font(.system(size: 14, weight: .bold)).lineLimit(1)
                                 Spacer(minLength: 4)
                                 Circle().fill(launcher.phase(of: g.id) == .running ? Theme.good : Theme.lineStrong).frame(width: 8, height: 8)
                             }
-                            .padding(.horizontal, 10).padding(.vertical, 8).contentShape(Rectangle())
+                            .padding(.horizontal, 10).padding(.vertical, 6).contentShape(Rectangle())
                             .background(on ? Theme.raised : .clear, in: RoundedRectangle(cornerRadius: 12))
                         }.buttonStyle(.plain)
                         .contextMenu {

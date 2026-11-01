@@ -5,6 +5,7 @@
 
 #include "effect_parser.hpp"
 #include "effect_codegen.hpp"
+#include "effect_cnumber.hpp"
 #include <cstdio>
 #include <cmath> // std::isinf, std::isnan, std::signbit
 #include <cassert>
@@ -153,7 +154,7 @@ protected:
 					case type::t_float:
 						char temp[64];
 						// std::to_chars for floating point needs macOS 13.3; snprintf gives the same scientific notation
-						const int length = std::snprintf(temp, sizeof(temp), "%.8e", static_cast<double>(initializer_value.as_float[i]));
+						const int length = c_format_exp(temp, sizeof(temp), static_cast<double>(initializer_value.as_float[i]));
 						if (length > 0)
 							preamble.append(temp, temp + length);
 						else
@@ -536,7 +537,7 @@ protected:
 				}
 				{
 					char temp[64];
-					const int length = std::snprintf(temp, sizeof(temp), "%.8e", static_cast<double>(data.as_float[i]));
+					const int length = c_format_exp(temp, sizeof(temp), static_cast<double>(data.as_float[i]));
 					if (length > 0)
 						s.append(temp, temp + length);
 					else

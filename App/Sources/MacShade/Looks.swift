@@ -103,10 +103,11 @@ struct LookCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 14) {
-                Toggle("", isOn: Binding(get: { isActive }, set: { if $0 { onSelect() } }))
-                    .toggleStyle(.checkbox).labelsHidden().disabled(locked).help(L("Activate look"))
+                Button { if !isActive { onSelect() } } label: {   // radio look: exactly one look is active
+                    Image(systemName: isActive ? "checkmark.circle.fill" : "circle").font(.system(size: 20)).foregroundStyle(isActive ? Theme.text : Theme.muted)
+                }.buttonStyle(.plain).disabled(locked).help(L("Activate look"))
                 Text(Presets.displayName(name)).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                Text(kind).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(isActive ? Theme.accent : Theme.muted)
+                Text(kind).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Theme.muted)
                 Spacer()
                 Button { expanded = open ? nil : name } label: {
                     HStack(spacing: 5) { Text(open ? L("Hide details") : L("Details")); Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .bold)) }
@@ -116,7 +117,7 @@ struct LookCard: View {
             if open { details.padding(.leading, 30) }
         }
         .padding(.horizontal, 16).padding(.vertical, 13).frame(maxWidth: .infinity, alignment: .leading)
-        .background(isActive ? Theme.accent.opacity(0.10) : Color.clear)
+        .background(isActive ? Theme.raised.opacity(0.6) : Color.clear)
         .contentShape(Rectangle())
         .task(id: open) { if open { typedName = String(name.dropLast(4)); ids = Presets.techniqueIDs(name, for: game); await loadCatalog() } }
     }

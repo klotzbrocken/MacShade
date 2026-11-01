@@ -17,7 +17,7 @@ struct MacShadeApp: App {
     }
     var body: some Scene {
         WindowGroup("MacShade") {
-            ContentView().environmentObject(store).environmentObject(launcher).environmentObject(UpdateChecker(updater.updater)).frame(minWidth: 1000, minHeight: 680)
+            ContentView().environmentObject(store).environmentObject(launcher).environmentObject(UpdateChecker(updater.updater)).frame(minWidth: 1180, minHeight: 700)
         }
         .commands { CommandGroup(after: .appInfo) { Button(L("Check for Updates …")) { updater.checkForUpdates(nil) } } }
         Settings { SettingsView(embedded: false, showPackages: {}).environmentObject(store).environmentObject(launcher).environmentObject(UpdateChecker(updater.updater)) }

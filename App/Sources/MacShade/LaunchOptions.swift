@@ -141,9 +141,9 @@ struct LaunchOptionsBox: View {
 
     var body: some View {
         let all = LaunchOptions.suggestions(for: game)
-        VStack(alignment: .leading, spacing: 20) {
-            SectionTitle("Start parameters", "Passed to the game at every start. A map URL (Unreal games) has to come first; the suggestions take care of that.")
-            Card {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Passed to the game at every start. A map URL (Unreal games) has to come first; the suggestions take care of that.").font(.system(size: 12.5)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
                 Text("PARAMETERS").font(.system(size: 12, weight: .bold)).tracking(0.8).foregroundStyle(Theme.muted)
                 TextField("Parameters for the game (e.g. -basedir \"/path/to/data\")", text: $game.arguments)
                     .textFieldStyle(.plain).font(.system(size: 14, design: .monospaced)).padding(12)

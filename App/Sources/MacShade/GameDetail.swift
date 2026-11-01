@@ -35,8 +35,6 @@ struct WelcomeView: View {
     }
 }
 
-enum GameTab: String, CaseIterable { case look = "Look", start = "Start", performance = "Performance", advanced = "Advanced" }
-
 struct UninstallButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.system(size: 13, weight: .bold)).foregroundStyle(.white).padding(.horizontal, 16).padding(.vertical, 9)
@@ -48,7 +46,7 @@ struct GameDetail: View {
     @Binding var game: Game
     var onRemove: () -> Void
     @EnvironmentObject var launcher: Launcher
-    @State private var tab = GameTab.look
+    @State private var open: Set<String> = ["Start"]   // the open sections of the inspector
     @State private var info: GameInfo?
     @State private var showReShadeLog = true
     @State private var presetMessage: String?
@@ -57,7 +55,6 @@ struct GameDetail: View {
     @State private var confirmReset = false
     @State private var expandedLook: String?
     @State private var copyUsage: Int64 = 0
-    @State private var banner: NSImage?
     @State private var captureAllowed = CGPreflightScreenCaptureAccess()
     @State private var uninstallStep = 0
     @State private var uninstallError: String?
@@ -70,110 +67,96 @@ struct GameDetail: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            hero
-            Rectangle().fill(Theme.line).frame(height: 1)
-            HStack(spacing: 4) {
-                ForEach(GameTab.allCases, id: \.self) { t in
-                    Button { tab = t } label: {
-                        Text(LocalizedStringKey(t.rawValue)).font(.system(size: 14, weight: .semibold)).lineLimit(1).fixedSize()
-                            .foregroundStyle(tab == t ? Theme.text : Theme.muted)
-                            .padding(.horizontal, 12).padding(.vertical, 10)
-                            .background(tab == t ? Theme.raised : .clear, in: RoundedRectangle(cornerRadius: 10))
-                    }.buttonStyle(.plain)
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {   // the looks
+                    statusRow
+                    ScrollView { lookTab.padding(.horizontal, 28).padding(.vertical, 18).frame(maxWidth: .infinity, alignment: .leading) }
                 }
-                Spacer()
-                startButton
-            }.padding(.horizontal, 36).padding(.top, 12)
-            ScrollView {
-                Group {
-                    switch tab {
-                    case .look: lookTab
-                    case .start: startTab
-                    case .performance: performanceTab
-                    case .advanced: advancedTab
-                    }
-                }.padding(.horizontal, 36).padding(.vertical, 22).frame(maxWidth: 980, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
+                Rectangle().fill(Theme.line).frame(width: 1)
+                inspector.frame(width: 340)
             }
+            Rectangle().fill(Theme.line).frame(height: 1)
+            actionBar
         }
+        .onAppear { captureAllowed = CGPreflightScreenCaptureAccess() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in captureAllowed = CGPreflightScreenCaptureAccess() }
         .task {
             Launcher.prepareInstance(game); refreshPresets()
             info = await Task.detached { [p = game.sourcePath] in inspectGame(p) }.value
             copyUsage = await Task.detached { [u = Paths.copy(for: game)] in Paths.diskUsage(u) }.value
         }
         .onChange(of: phase) { _ in refreshPresets(); Task { copyUsage = await Task.detached { [u = Paths.copy(for: game)] in Paths.diskUsage(u) }.value } }
-        .onChange(of: failed) { if $0 { tab = .advanced } }   // the log is there
+        .onChange(of: failed) { if $0 { open.insert("Advanced") } }   // the log is there
     }
 
     // MARK: hero
 
-    private var hero: some View {
-        HStack(spacing: 22) {
-            GameTile(name: game.name, path: game.sourcePath, size: 64)
-            VStack(alignment: .leading, spacing: 8) {
-                Text(game.name).font(.system(size: 28, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.6)
-                Flow(spacing: 8) {
-                    if let info {
-                        Pill(text: info.api.shortLabel, color: info.api == .vulkan ? Theme.good : (info.api == .bridge ? Theme.accent : Theme.warn))
-                        if !info.archs.contains("arm64") && !game.captureMode { Pill(text: L("Architecture: %@", info.archs), color: Theme.warn) }
-                    }
-                    if let seen = launcher.observedPath[game.id], seen != info?.api.shortLabel { Pill(text: L("Last start: %@", seen), color: seen == L("ReShade loaded, but no graphics path was hooked") ? Theme.warn : Theme.accent) }
-                    if game.captureMode { Pill(text: L("Screen filter"), color: Theme.warn) }
-                    if copyUsage > 0 && !game.captureMode { Pill(text: L("Game copy ready · %@", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file)), color: Theme.good) }
-                    statusView
+    /// API, copy, mode and status below the banner line.
+    private var statusRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Flow(spacing: 8) {
+                if let info {
+                    Pill(text: info.api.shortLabel, color: info.api == .vulkan ? Theme.good : (info.api == .bridge ? Theme.accent : Theme.warn))
+                    if !info.archs.contains("arm64") && !game.captureMode { Pill(text: L("Architecture: %@", info.archs), color: Theme.warn) }
                 }
-                if !game.captureMode, let why = PortAdvice.incompatible(game.name) {
-                    Text(why).font(.caption).foregroundStyle(Theme.warn)
-                    Button("Use the screen filter mode") { setCapture(true) }.buttonStyle(SoftButton(tint: Theme.accent))
-                }
-                if let info, !info.archs.contains("arm64"), !game.captureMode { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn) }
+                if let seen = launcher.observedPath[game.id], seen != info?.api.shortLabel { Pill(text: L("Last start: %@", seen), color: seen == L("ReShade loaded, but no graphics path was hooked") ? Theme.warn : Theme.accent) }
+                if game.captureMode { Pill(text: L("Screen filter"), color: Theme.warn) }
+                if copyUsage > 0 && !game.captureMode { Pill(text: L("Game copy ready · %@", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file)), color: Theme.good) }
+                statusView
             }
-            Spacer(minLength: 12)
-        }.padding(.horizontal, 36).padding(.top, 24).padding(.bottom, 18)
-        .frame(minHeight: banner == nil ? 0 : 170)
-        .background { bannerBackground }
-        .overlay(alignment: .topTrailing) { bannerMenu.padding(10) }
-        .onDrop(of: [.fileURL], isTargeted: nil) { providers in   // an image dropped on the header becomes the banner
-            guard let p = providers.first else { return false }
-            _ = p.loadObject(ofClass: URL.self) { url, _ in if let url { Task { @MainActor in setBanner(from: url) } } }
-            return true
-        }
-        .onAppear { banner = NSImage(contentsOf: Paths.banner(for: game)); captureAllowed = CGPreflightScreenCaptureAccess() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in captureAllowed = CGPreflightScreenCaptureAccess() }
+            if !game.captureMode, let why = PortAdvice.incompatible(game.name) {
+                Text(why).font(.caption).foregroundStyle(Theme.warn)
+                Button("Use the screen filter mode") { setCapture(true) }.buttonStyle(SoftButton(tint: Theme.accent))
+            }
+            if let info, !info.archs.contains("arm64"), !game.captureMode { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn) }
+        }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 28).padding(.top, 14)
     }
 
-    /// Start buttons at the right end of the tab row: ReShade start, then the plain start.
-    @ViewBuilder private var startButton: some View {
-        HStack(spacing: 8) {
+    /// Fixed bar at the bottom: status on the left, the two start buttons on the right.
+    private var actionBar: some View {
+        HStack(spacing: 10) {
+            statusView
+            if let seen = launcher.observedPath[game.id], seen != info?.api.shortLabel {
+                Pill(text: L("Last start: %@", seen), color: seen == L("ReShade loaded, but no graphics path was hooked") ? Theme.warn : Theme.accent)
+            }
+            Spacer()
             if phase == .running {
                 Button { launcher.stop(game) } label: { Label("Quit game", systemImage: "stop.fill").lineLimit(1).fixedSize() }.buttonStyle(BigButton(stop: true, small: true))
             } else {
-                Button { launcher.start(game) } label: { Label("Start ReShade", systemImage: "play.fill").lineLimit(1).fixedSize() }
-                    .buttonStyle(BigButton(small: true)).disabled(busy || (info?.api == .staticVulkan && !game.captureMode)).keyboardShortcut(.return, modifiers: .command)
                 Button { launcher.startPlain(game) } label: { Text("Normal start").lineLimit(1).fixedSize() }
                     .buttonStyle(QuietButton()).disabled(busy).help(L("Starts the game without ReShade, as if you had opened it yourself."))
+                Button { launcher.start(game) } label: { Label("Start ReShade", systemImage: "play.fill").lineLimit(1).fixedSize() }
+                    .buttonStyle(BigButton(small: true)).disabled(busy || (info?.api == .staticVulkan && !game.captureMode)).keyboardShortcut(.return, modifiers: .command)
             }
-        }
+        }.padding(.horizontal, 28).padding(.vertical, 12).background(Theme.rail)
     }
 
-    @ViewBuilder private var bannerBackground: some View {
-        if let banner {
-            Image(nsImage: banner).resizable().scaledToFill().frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
-                .overlay(LinearGradient(colors: [Theme.bg.opacity(0.94), Theme.bg.opacity(0.55), Theme.bg.opacity(0.15)], startPoint: .leading, endPoint: .trailing))
-                .overlay(LinearGradient(colors: [.clear, Theme.bg], startPoint: .center, endPoint: .bottom))
-        }
+    /// Everything but the looks, in folding sections beside the look list.
+    private var inspector: some View {
+        ScrollView {
+            VStack(spacing: 10) {
+                section("Start") { startTab }
+                section("Performance") { performanceSection }
+                section("Hotkeys in the game") { keysSection }
+                section("Advanced") { advancedTab }
+            }.padding(16)
+        }.background(Theme.rail.opacity(0.5))
     }
 
-    private var bannerMenu: some View {
-        Menu {
-            Button("Choose banner image …") { chooseBanner() }
-            Button("Find fan art (SteamGridDB) …") {
-                var c = URLComponents(string: "https://www.steamgriddb.com/search/grids")!; c.queryItems = [URLQueryItem(name: "term", value: game.name)]
-                NSWorkspace.shared.open(c.url!)
-            }
-            if banner != nil { Divider(); Button("Remove banner") { try? FileManager.default.removeItem(at: Paths.banner(for: game)); banner = nil } }
-        } label: { Image(systemName: "photo") }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 30, height: 30)
-            .background(Theme.card.opacity(0.85), in: RoundedRectangle(cornerRadius: 8)).help(L("Banner"))
+    private func section<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        let isOpen = open.contains(title)
+        return VStack(alignment: .leading, spacing: 12) {
+            Button { if isOpen { open.remove(title) } else { open.insert(title) } } label: {
+                HStack {
+                    Text(LocalizedStringKey(title)).font(.system(size: 14, weight: .bold))
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).rotationEffect(.degrees(isOpen ? 90 : 0)).foregroundStyle(Theme.muted)
+                }.contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if isOpen { content().fixedSize(horizontal: false, vertical: true) }
+        }
+        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
     }
 
     /// Turns the screen filter mode on or off; switching it on asks for the Screen Recording permission right away, not at the first start.
@@ -181,18 +164,6 @@ struct GameDetail: View {
         game.captureMode = on
         if on && !CGPreflightScreenCaptureAccess() { _ = CGRequestScreenCaptureAccess() }
         captureAllowed = CGPreflightScreenCaptureAccess()
-    }
-
-    private func chooseBanner() {
-        let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.message = L("Choose a banner image (about 3:1, e.g. 1920×620)")
-        if panel.runModal() == .OK, let url = panel.url { setBanner(from: url) }
-    }
-
-    private func setBanner(from url: URL) {
-        guard NSImage(contentsOf: url) != nil else { return }
-        let fm = FileManager.default; try? fm.createDirectory(at: Paths.banners, withIntermediateDirectories: true)
-        let dest = Paths.banner(for: game); try? fm.removeItem(at: dest)
-        if (try? fm.copyItem(at: url, to: dest)) != nil { banner = NSImage(contentsOf: dest) }
     }
 
     @ViewBuilder private var statusView: some View {
@@ -209,21 +180,11 @@ struct GameDetail: View {
     private var lookTab: some View {
         let builtIn = Presets.bundledNames(for: game)
         return VStack(alignment: .leading, spacing: 18) {
-            if let b = PortAdvice.better(for: game.name) {
-                HStack(alignment: .center, spacing: 12) {
-                    Image(systemName: "sparkles").foregroundStyle(Theme.accent)
-                    (Text(L("Better experience: %@", b.name)).fontWeight(.bold) + Text("  ·  " + b.why).foregroundColor(Theme.muted)).font(.system(size: 13)).lineLimit(2)
-                    Spacer(minLength: 8)
-                    Link("Open page", destination: b.url).buttonStyle(.plain).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
-            }
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Choose your look").font(.system(size: 20, weight: .heavy))
+                    Text("Choose your look").font(.system(size: 18, weight: .heavy)).lineLimit(1).fixedSize()
                     Text("Only one look is active per game. It is loaded at the next start; in the game you can change it live.").font(.system(size: 13)).foregroundStyle(Theme.muted)
-                    Label(L("In the game: %@ opens ReShade", game.overlayKey.label), systemImage: "keyboard").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.muted)
+                    Label(L("In the game: %@ opens ReShade", game.overlayKey.label), systemImage: "keyboard").font(.system(size: 12)).foregroundStyle(Theme.muted)
                 }
                 Spacer(minLength: 12)
                 Menu {
@@ -250,6 +211,16 @@ struct GameDetail: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line, lineWidth: 1))
             if let presetMessage { Text(presetMessage).font(.caption).foregroundStyle(Theme.good) }
+            if let b = PortAdvice.better(for: game.name) {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "sparkles").foregroundStyle(Theme.accent)
+                    (Text(L("Better experience: %@", b.name)).fontWeight(.bold) + Text("  ·  " + b.why).foregroundColor(Theme.muted)).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Link("Open page", destination: b.url).buttonStyle(.plain).font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            }
         }
         .confirmationDialog(L("Reset all presets of “%@”?", game.name), isPresented: $confirmReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) { Presets.resetAll(for: game); presetMessage = L("All presets were reset to the default."); refreshPresets() }
@@ -273,7 +244,7 @@ struct GameDetail: View {
     // MARK: start
 
     private var startTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 12) {
             LaunchOptionsBox(game: $game)
             Card {
                 Toggle(isOn: $game.autoStart) {
@@ -296,8 +267,8 @@ struct GameDetail: View {
     // MARK: keys
 
     private var keysSection: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            SectionTitle("Hotkeys in the game", "Click a key, then press the combination you want.")
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Click a key, then press the combination you want.").font(.system(size: 12.5)).foregroundStyle(Theme.muted)
             Card {
                 KeyRecorder(title: "Open overlay", binding: $game.overlayKey)
                 Divider().overlay(Theme.line)
@@ -305,8 +276,8 @@ struct GameDetail: View {
                 Divider().overlay(Theme.line)
                 KeyRecorder(title: "Effects on/off", binding: $game.effectsKey)
             }
-            HStack(spacing: 8) {
-                Text("Suggestions for the overlay key").font(.system(size: 13)).foregroundStyle(Theme.muted)
+            Text("Suggestions for the overlay key").font(.system(size: 13)).foregroundStyle(Theme.muted)
+            Flow {
                 Button("Home (Fn + ←)") { game.overlayKey = .home }.buttonStyle(SoftButton())
                 Button("F10") { game.overlayKey = KeyBinding(vk: 0x79) }.buttonStyle(SoftButton())
                 Button("Ctrl + Shift + O") { game.overlayKey = KeyBinding(vk: 0x4F, ctrl: true, shift: true) }.buttonStyle(SoftButton())
@@ -318,24 +289,15 @@ struct GameDetail: View {
 
     // MARK: performance
 
-    private var performanceTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            SectionTitle("Performance")
+    private var performanceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
             Card {
                 Text("Frame rate limit").font(.system(size: 15, weight: .bold))
                 Text("Holds the game to this frame rate (also saves power and heat). Takes effect at the next start.").font(.system(size: 13)).foregroundStyle(Theme.muted)
                 if game.captureMode { Text("In screen filter mode this limits the filtered picture only; the game itself keeps running at its own rate.").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent) }
-                HStack(spacing: 4) {
-                    ForEach([0, 30, 60, 120, 144], id: \.self) { v in
-                        Button { game.fpsLimit = v } label: {
-                            Text(v == 0 ? L("No limit") : "\(v)").font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(game.fpsLimit == v ? Theme.onAccent : Theme.muted)
-                                .padding(.horizontal, 14).padding(.vertical, 8)
-                                .background(game.fpsLimit == v ? Theme.accent : .clear, in: RoundedRectangle(cornerRadius: 8))
-                        }.buttonStyle(.plain)
-                    }
-                    if ![0, 30, 60, 120, 144].contains(game.fpsLimit) { Pill(text: "\(game.fpsLimit) FPS", color: Theme.accent) }
-                }.padding(4).background(Theme.bg, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+                let steps = Array(Set([0, 30, 60, 120, 144, game.fpsLimit])).sorted()
+                Picker("", selection: $game.fpsLimit) { ForEach(steps, id: \.self) { Text($0 == 0 ? L("No limit") : "\($0) FPS").tag($0) } }
+                    .labelsHidden().pickerStyle(.menu).fixedSize()
             }
             Card {
                 Toggle(isOn: $game.captureHalfResolution) {
@@ -367,13 +329,12 @@ struct GameDetail: View {
     // MARK: advanced
 
     private var advancedTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: 12) {
             Card {
                 Text("Name").font(.system(size: 15, weight: .bold))
                 TextField("Name", text: $game.name).textFieldStyle(.roundedBorder).frame(maxWidth: 360)
             }
-            keysSection
-            HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 12) {
                 Card {
                     Text("Game copy").font(.system(size: 15, weight: .bold))
                     if game.captureMode { Text("Not used in screen filter mode: the original app is started.").font(.system(size: 13)).foregroundStyle(Theme.accent) }

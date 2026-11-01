@@ -50,10 +50,11 @@ struct KeyRecorder: View {
     @State private var monitor: Any?
 
     var body: some View {
-        HStack {
-            Text(LocalizedStringKey(title)).font(.system(size: 15, weight: .bold))
-            Spacer()
-            Button { recording ? stop() : start() } label: { Text(recording ? L("Press a key … (Esc cancels)") : binding.label).font(.system(size: 13, design: .monospaced)).frame(minWidth: 180) }.buttonStyle(SoftButton(tint: recording ? Theme.accent : Theme.text))
+        let name = Text(LocalizedStringKey(title)).font(.system(size: 15, weight: .bold)).lineLimit(1).fixedSize()
+        let button = Button { recording ? stop() : start() } label: { Text(recording ? L("Press a key … (Esc cancels)") : binding.label).font(.system(size: 13, design: .monospaced)).frame(minWidth: 110) }.buttonStyle(SoftButton(tint: recording ? Theme.accent : Theme.text))
+        return ViewThatFits(in: .horizontal) {   // side by side when there is room (settings), else the name above the key (inspector)
+            HStack { name; Spacer(minLength: 8); button }
+            VStack(alignment: .leading, spacing: 6) { name; button }
         }
     }
 
