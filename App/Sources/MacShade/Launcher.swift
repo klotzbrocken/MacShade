@@ -50,9 +50,40 @@ func splitArguments(_ s: String) -> [String] {
     return out
 }
 
+/// Some games start through a shell script (`exec "$DIR/binary" "$@"`). The system shell drops DYLD_INSERT_LIBRARIES, so ReShade has to go straight to the program the script starts.
+/// Reads simple `NAME="value"` lines and the `exec` line; anything that needs a shell to evaluate (command substitution, unknown variables) gives nil.
+func scriptTarget(_ exe: URL) -> URL? {
+    guard let text = try? String(contentsOf: exe, encoding: .utf8), text.hasPrefix("#!") else { return nil }
+    var vars: [String: String] = [:]
+    func expand(_ s: String) -> String? {
+        var out = s
+        for (k, v) in vars { out = out.replacingOccurrences(of: "${\(k)}", with: v).replacingOccurrences(of: "$\(k)", with: v) }
+        return out.contains("$") || out.contains("`") ? nil : out
+    }
+    func firstWord(_ s: String) -> String {
+        if let q = s.first, q == "\"" || q == "'" { return String(s.dropFirst().prefix { $0 != q }) }
+        return String(s.prefix { !$0.isWhitespace })
+    }
+    for raw in text.split(separator: "\n") {
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        if line.hasPrefix("#") { continue }
+        if let eq = line.firstIndex(of: "="), !line.hasPrefix("exec"), line[..<eq].allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" }), !line[..<eq].isEmpty {
+            if let v = expand(firstWord(String(line[line.index(after: eq)...]))) { vars[String(line[..<eq])] = v }
+        } else if line.hasPrefix("exec ") {
+            guard let path = expand(firstWord(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))), path.hasPrefix("/") else { return nil }
+            let target = URL(fileURLWithPath: path)
+            guard FileManager.default.isExecutableFile(atPath: target.path), shell("/usr/bin/lipo", ["-archs", target.path]).status == 0 else { return nil }
+            return target
+        }
+    }
+    return nil
+}
+
 func inspectGame(_ path: String) -> GameInfo {
     let url = URL(fileURLWithPath: path)
-    let exe = Bundle(url: url)?.executableURL
+    var exe = Bundle(url: url)?.executableURL
+    var root = url.appendingPathComponent("Contents")   // where engine libraries are looked for
+    if let e = exe, let target = scriptTarget(e) { exe = target; root = target.deletingLastPathComponent() }
     let archs = exe.map { e -> String in
         let r = shell("/usr/bin/lipo", ["-archs", e.path])
         let out = r.output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,14 +92,14 @@ func inspectGame(_ path: String) -> GameInfo {
     var api = GraphicsAPI.unknown
     let fm = FileManager.default
     if let exe, shell("/usr/bin/nm", ["-gU", exe.path]).output.contains(" _vkCreateInstance") { return GameInfo(executable: exe.path, archs: archs, api: .staticVulkan) }   // e.g. Raze: MoltenVK is part of the program
-    if let en = fm.enumerator(atPath: url.appendingPathComponent("Contents").path) {
+    if let en = fm.enumerator(atPath: root.path) {
         for case let f as String in en where f.lowercased().contains("moltenvk") || f.lowercased().contains("libvulkan") { api = .vulkan; break }
     }
     if api == .unknown, let exe {
         // look at what the executable and the SDL/engine libraries next to it link against
         var candidates = [exe.path]
-        if let en = fm.enumerator(atPath: url.appendingPathComponent("Contents").path) {
-            for case let f as String in en where f.hasSuffix(".dylib") && (f.contains("SDL") || f.contains("GLFW") || f.contains("glfw")) { candidates.append(url.appendingPathComponent("Contents/\(f)").path) }
+        if let en = fm.enumerator(atPath: root.path) {
+            for case let f as String in en where f.hasSuffix(".dylib") && (f.contains("SDL") || f.contains("GLFW") || f.contains("glfw")) { candidates.append(root.appendingPathComponent(f).path) }
         }
         for c in candidates {
             let out = shell("/usr/bin/otool", ["-L", c]).output
@@ -264,7 +295,9 @@ final class Launcher: ObservableObject {
     }
 
     private func launch(_ game: Game, copy: URL) {
-        guard let exe = Bundle(url: copy)?.executableURL else { phase[game.id] = .failed(L("No executable found in the app package.")); return }
+        guard var exe = Bundle(url: copy)?.executableURL else { phase[game.id] = .failed(L("No executable found in the app package.")); return }
+        let viaScript = scriptTarget(exe)
+        if let viaScript { exe = viaScript }   // started straight from where the script points, see scriptTarget
         let instance = Launcher.prepareInstance(game)
         let logURL = Paths.logs.appendingPathComponent("\(game.id.uuidString).log")
         FileManager.default.createFile(atPath: logURL.path, contents: nil)
@@ -275,7 +308,7 @@ final class Launcher: ObservableObject {
         var env = Launcher.inheritedEnvironment()
         env["DYLD_INSERT_LIBRARIES"] = Paths.dylib.path
         // prefer the MoltenVK the game ships: the game was built and tested against that version
-        let bundle = exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let bundle = viaScript != nil ? exe.deletingLastPathComponent() : exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let own = FileManager.default.enumerator(atPath: bundle.path)?.compactMap { $0 as? String }.first { $0.hasSuffix("/libMoltenVK.dylib") || $0 == "libMoltenVK.dylib" }
         env["MACSHADE_MOLTENVK"] = own.map { bundle.appendingPathComponent($0).path } ?? Paths.dylib.deletingLastPathComponent().appendingPathComponent("libMoltenVK.dylib").path
         env["MACSHADE_BASE"] = instance.path

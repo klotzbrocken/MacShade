@@ -8,6 +8,7 @@
 #import <Metal/Metal.h>
 #import <IOSurface/IOSurface.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #include "dll_log.hpp"
 #include <cstdlib>
 #include <mutex>
@@ -403,8 +404,10 @@ namespace
 		return macshade_bridge_is_idle(&fps_only);
 	}
 
+	const void *const kHandledKey = &kHandledKey;   // associated-object key: this drawable goes through the command-buffer path
 	void hooked_present_drawable(id self, SEL cmd, id<MTLDrawable> drawable)
 	{
+		objc_setAssociatedObject(drawable, kHandledKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 		const bool pass = !bridge_enabled() || pass_through_now();
 		note_present(pass);
 		macshade_frame_limit();
@@ -415,6 +418,7 @@ namespace
 	}
 	void hooked_present_at(id self, SEL cmd, id<MTLDrawable> drawable, CFTimeInterval time)
 	{
+		objc_setAssociatedObject(drawable, kHandledKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 		const bool pass = !bridge_enabled() || pass_through_now();
 		note_present(pass);
 		macshade_frame_limit();
@@ -423,6 +427,7 @@ namespace
 	}
 	void hooked_present_after(id self, SEL cmd, id<MTLDrawable> drawable, CFTimeInterval duration)
 	{
+		objc_setAssociatedObject(drawable, kHandledKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 		const bool pass = !bridge_enabled() || pass_through_now();
 		note_present(pass);
 		macshade_frame_limit();
@@ -447,6 +452,58 @@ namespace
 			}
 		}
 		return s_orig_render_encoder(self, cmd, desc);
+	}
+
+
+	// ---- Metal 4 / display-link games: no command buffer presents; the drawable presents itself ([drawable present]) after the MTL4 queue's work ----
+	// The game's queue is remembered at -[MTL4CommandQueue signalDrawable:]. At the present call a shared event is signalled on that queue (it runs after everything
+	// the game committed), and the frame is processed and presented from the event's listener, so the game's thread never waits.
+	const void *const kQueueKey = &kQueueKey;
+	void (*s_orig_signal_drawable)(id, SEL, id) = nullptr;
+	void (*s_orig_drawable_present)(id, SEL) = nullptr;
+	void (*s_orig_drawable_present_after)(id, SEL, CFTimeInterval) = nullptr;
+
+	void hooked_signal_drawable(id self, SEL cmd, id drawable)
+	{
+		objc_setAssociatedObject(drawable, kQueueKey, self, OBJC_ASSOCIATION_ASSIGN);   // the queue lives as long as the game
+		s_orig_signal_drawable(self, cmd, drawable);
+	}
+
+	/// Returns true when the present was taken over (it is carried out later); false: the caller presents as the game asked.
+	bool present_drawable_later(id drawable, void (^present)(void))
+	{
+		static std::atomic<bool> logged{false};
+		if (!bridge_enabled() || ![drawable conformsToProtocol:@protocol(CAMetalDrawable)]) return false;
+		if (objc_getAssociatedObject(drawable, kHandledKey) != nil) return false;   // the command-buffer path owns this one
+		id<CAMetalDrawable> d = (id<CAMetalDrawable>)drawable;
+		if (!logged.exchange(true)) reshade::log::message(reshade::log::level::info, "Bridge: first drawable present (Metal 4 / display link): on %s.", class_getName(object_getClass(drawable)));
+		const bool pass = pass_through_now();
+		note_present(pass);
+		macshade_frame_limit();
+		if (pass) return false;
+		CAMetalLayer *layer = d.layer;
+		if (d.texture.framebufferOnly) { layer.framebufferOnly = NO; return false; }   // this drawable cannot be read; the next ones can
+		id queue = objc_getAssociatedObject(drawable, kQueueKey);
+		if (queue == nil) return false;
+		static id<MTLSharedEvent> event = nil; static MTLSharedEventListener *listener = nil; static std::atomic<uint64_t> value{0};
+		static dispatch_once_t once;
+		dispatch_once(&once, ^{ event = [d.texture.device newSharedEvent]; listener = [[MTLSharedEventListener alloc] initWithDispatchQueue:dispatch_queue_create("macshade.bridge.present", DISPATCH_QUEUE_SERIAL)]; });
+		const uint64_t v = ++value;
+		((void (*)(id, SEL, id, uint64_t))objc_msgSend)(queue, sel_registerName("signalEvent:value:"), event, v);
+		[event notifyListener:listener atValue:v block:^(id<MTLSharedEvent>, uint64_t) {
+			process(d);
+			present();
+		}];
+		return true;
+	}
+
+	void hooked_drawable_present(id self, SEL cmd)
+	{
+		if (!present_drawable_later(self, ^{ s_orig_drawable_present(self, cmd); })) s_orig_drawable_present(self, cmd);
+	}
+	void hooked_drawable_present_after(id self, SEL cmd, CFTimeInterval duration)
+	{
+		if (!present_drawable_later(self, ^{ s_orig_drawable_present_after(self, cmd, duration); })) s_orig_drawable_present_after(self, cmd, duration);
 	}
 
 	id (*s_orig_next_drawable)(id, SEL) = nullptr;
@@ -503,6 +560,19 @@ namespace
 			swizzle(cb_class, @selector(presentDrawable:atTime:), (void *)&hooked_present_at, s_orig_present_at);
 			swizzle(cb_class, @selector(presentDrawable:afterMinimumDuration:), (void *)&hooked_present_after, s_orig_present_after);
 			swizzle([CAMetalLayer class], @selector(nextDrawable), (void *)&hooked_next_drawable, s_orig_next_drawable);
+
+			// Metal 4 (macOS 26): the game's queue is an MTL4CommandQueue and the drawable presents itself
+			CAMetalLayer *sample_layer = [CAMetalLayer layer]; sample_layer.device = device; sample_layer.drawableSize = CGSizeMake(16, 16);
+			if (id<CAMetalDrawable> sample_drawable = [sample_layer nextDrawable])
+			{
+				Class drawable_class = object_getClass(sample_drawable);
+				swizzle(drawable_class, @selector(present), (void *)&hooked_drawable_present, s_orig_drawable_present);
+				swizzle(drawable_class, @selector(presentAfterMinimumDuration:), (void *)&hooked_drawable_present_after, s_orig_drawable_present_after);
+			}
+			SEL make_queue = sel_registerName("newMTL4CommandQueue");
+			if ([device respondsToSelector:make_queue])
+				if (id queue4 = ((id (*)(id, SEL))objc_msgSend)(device, make_queue))
+					swizzle(object_getClass(queue4), sel_registerName("signalDrawable:"), (void *)&hooked_signal_drawable, s_orig_signal_drawable);
 		}
 	}
 }

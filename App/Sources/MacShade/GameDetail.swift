@@ -102,13 +102,13 @@ struct GameDetail: View {
                 if let seen = launcher.observedPath[game.id], seen != info?.api.shortLabel { Pill(text: L("Last start: %@", seen), color: seen == L("ReShade loaded, but no graphics path was hooked") ? Theme.warn : Theme.accent) }
                 if game.captureMode { Pill(text: L("Screen filter"), color: Theme.warn) }
                 if copyUsage > 0 && !game.captureMode { Pill(text: L("Game copy ready · %@", ByteCountFormatter.string(fromByteCount: copyUsage, countStyle: .file)), color: Theme.good) }
-                statusView
+                if !failed { statusView }   // a failure is shown in the bottom bar
             }
             if !game.captureMode, let why = PortAdvice.incompatible(game.name) {
-                Text(why).font(.caption).foregroundStyle(Theme.warn)
+                Text(why).font(.caption).foregroundStyle(Theme.warn).fixedSize(horizontal: false, vertical: true)
                 Button("Use the screen filter mode") { setCapture(true) }.buttonStyle(SoftButton(tint: Theme.accent))
             }
-            if let info, !info.archs.contains("arm64"), !game.captureMode { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn) }
+            if let info, !info.archs.contains("arm64"), !game.captureMode { Text("The game has no arm64 version; ReShade is arm64 and cannot be loaded.").font(.caption).foregroundStyle(Theme.warn).fixedSize(horizontal: false, vertical: true) }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 28).padding(.top, 14)
     }
 
@@ -119,7 +119,7 @@ struct GameDetail: View {
             if let seen = launcher.observedPath[game.id], seen != info?.api.shortLabel {
                 Pill(text: L("Last start: %@", seen), color: seen == L("ReShade loaded, but no graphics path was hooked") ? Theme.warn : Theme.accent)
             }
-            Spacer()
+            Spacer(minLength: 0)
             if phase == .running {
                 Button { launcher.stop(game) } label: { Label("Quit game", systemImage: "stop.fill").lineLimit(1).fixedSize() }.buttonStyle(BigButton(stop: true, small: true))
             } else {
@@ -171,7 +171,7 @@ struct GameDetail: View {
         case .idle: EmptyView()
         case .preparing(let m): HStack(spacing: 6) { ProgressView().controlSize(.small); Text(m).font(.caption) }
         case .running: Pill(text: L("Running"), color: Theme.good)
-        case .failed(let m): Text(m).font(.caption).foregroundStyle(Theme.bad).lineLimit(3)
+        case .failed(let m): Text(m).font(.caption).foregroundStyle(Theme.bad).lineLimit(3).fixedSize(horizontal: false, vertical: true)
         }
     }
 
